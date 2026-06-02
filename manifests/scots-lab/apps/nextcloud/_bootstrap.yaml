@@ -1,0 +1,690 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+  name: nextcloud
+---
+apiVersion: v1
+data:
+  cloudflare-headers.conf: |
+    # Increase header field size limits for Cloudflare Tunnel JWT/Access headers
+    # Default is 8190 bytes which is exceeded by Cloudflare Access tokens
+    # See agents.md Rule #26: oauth2-proxy Header Bloat Limits
+    LimitRequestFieldSize 32768
+    LimitRequestLine 32768
+kind: ConfigMap
+metadata:
+  name: nextcloud-apache-header-fix
+  namespace: nextcloud
+---
+apiVersion: v1
+data:
+  .htaccess: |-
+    # line below if for Apache 2.4
+    <ifModule mod_authz_core.c>
+    Require all denied
+    </ifModule>
+    # line below if for Apache 2.2
+    <ifModule !mod_authz_core.c>
+    deny from all
+    </ifModule>
+    # section for Apache 2.2 and 2.4
+    <ifModule mod_autoindex.c>
+    IndexIgnore *
+    </ifModule>
+  apache-pretty-urls.config.php: |-
+    <?php
+    $CONFIG = array (
+      'htaccess.RewriteBase' => '/',
+    );
+  apcu.config.php: |-
+    <?php
+    $CONFIG = array (
+      'memcache.local' => '\OC\Memcache\APCu',
+    );
+  apps.config.php: |-
+    <?php
+    $CONFIG = array (
+      "apps_paths" => array (
+          0 => array (
+                  "path"     => OC::$SERVERROOT."/apps",
+                  "url"      => "/apps",
+                  "writable" => false,
+          ),
+          1 => array (
+                  "path"     => OC::$SERVERROOT."/custom_apps",
+                  "url"      => "/custom_apps",
+                  "writable" => true,
+          ),
+      ),
+    );
+  autoconfig.php: |-
+    <?php
+    $autoconfig_enabled = false;
+    if (getenv('SQLITE_DATABASE')) {
+        $AUTOCONFIG["dbtype"] = "sqlite";
+        $AUTOCONFIG["dbname"] = getenv('SQLITE_DATABASE');
+        $autoconfig_enabled = true;
+    } elseif (getenv('MYSQL_DATABASE') && getenv('MYSQL_USER') && getenv('MYSQL_PASSWORD') && getenv('MYSQL_HOST')) {
+        $AUTOCONFIG["dbtype"] = "mysql";
+        $AUTOCONFIG["dbname"] = getenv('MYSQL_DATABASE');
+        $AUTOCONFIG["dbuser"] = getenv('MYSQL_USER');
+        $AUTOCONFIG["dbpass"] = getenv('MYSQL_PASSWORD');
+        $AUTOCONFIG["dbhost"] = getenv('MYSQL_HOST');
+        $autoconfig_enabled = true;
+    } elseif (getenv('POSTGRES_DB') && getenv('POSTGRES_USER') && getenv('POSTGRES_PASSWORD') && getenv('POSTGRES_HOST')) {
+        $AUTOCONFIG["dbtype"] = "pgsql";
+        $AUTOCONFIG["dbname"] = getenv('POSTGRES_DB');
+        $AUTOCONFIG["dbuser"] = getenv('POSTGRES_USER');
+        $AUTOCONFIG["dbpass"] = getenv('POSTGRES_PASSWORD');
+        $AUTOCONFIG["dbhost"] = getenv('POSTGRES_HOST');
+        $autoconfig_enabled = true;
+    }
+    if ($autoconfig_enabled) {
+        $AUTOCONFIG["directory"] = getenv('NEXTCLOUD_DATA_DIR') ?: "/var/www/html/data";
+    }
+  proxy.config.php: |-
+    <?php
+    $CONFIG = array (
+      'trusted_proxies' => array('10.0.0.0/8', '192.168.0.0/16', '172.16.0.0/12'),
+      'overwriteprotocol' => 'https',
+    );
+  redis.config.php: |-
+    <?php
+    if (getenv('REDIS_HOST')) {
+      $CONFIG = array (
+        'memcache.distributed' => '\OC\Memcache\Redis',
+        'memcache.locking' => '\OC\Memcache\Redis',
+        'redis' => array(
+          'host' => getenv('REDIS_HOST'),
+          'port' => getenv('REDIS_HOST_PORT') ?: 6379,
+          'password' => getenv('REDIS_HOST_PASSWORD'),
+        ),
+      );
+    }
+  smtp.config.php: |-
+    <?php
+    if (getenv('SMTP_HOST') && getenv('MAIL_FROM_ADDRESS') && getenv('MAIL_DOMAIN')) {
+      $CONFIG = array (
+        'mail_smtpmode' => 'smtp',
+        'mail_smtphost' => getenv('SMTP_HOST'),
+        'mail_smtpport' => getenv('SMTP_PORT') ?: (getenv('SMTP_SECURE') ? 465 : 25),
+        'mail_smtpsecure' => getenv('SMTP_SECURE') ?: '',
+        'mail_smtpauth' => getenv('SMTP_NAME') && getenv('SMTP_PASSWORD'),
+        'mail_smtpauthtype' => getenv('SMTP_AUTHTYPE') ?: 'LOGIN',
+        'mail_smtpname' => getenv('SMTP_NAME') ?: '',
+        'mail_smtppassword' => getenv('SMTP_PASSWORD') ?: '',
+        'mail_from_address' => getenv('MAIL_FROM_ADDRESS'),
+        'mail_domain' => getenv('MAIL_DOMAIN'),
+      );
+    }
+  trusted_domains.config.php: |-
+    <?php
+    $CONFIG = array (
+      'trusted_domains' => array(
+        0 => 'files.srbii.com',
+        1 => 'localhost',
+        2 => '10.*',
+        3 => '192.168.*',
+      ),
+    );
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: nextcloud
+    helm.sh/chart: nextcloud-4.6.11
+  name: nextcloud-config
+  namespace: nextcloud
+---
+apiVersion: v1
+data:
+  nextcloud-password: Y2hhbmdlbWU=
+  nextcloud-username: YWRtaW4=
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: nextcloud
+    helm.sh/chart: nextcloud-4.6.11
+  name: nextcloud
+  namespace: nextcloud
+type: Opaque
+---
+apiVersion: v1
+data:
+  db-password: Y2hhbmdlbWU=
+  db-username: bmV4dGNsb3Vk
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: nextcloud
+    helm.sh/chart: nextcloud-4.6.11
+  name: nextcloud-db
+  namespace: nextcloud
+type: Opaque
+---
+apiVersion: v1
+data:
+  password: Y2hhbmdlbWU=
+  postgres-password: bjZEeEM0WldXeg==
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/version: 15.4.0
+    helm.sh/chart: postgresql-12.12.10
+  name: nextcloud-postgresql
+  namespace: nextcloud
+type: Opaque
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: nextcloud
+    helm.sh/chart: nextcloud-4.6.11
+  name: nextcloud
+  namespace: nextcloud
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/name: nextcloud
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/version: 15.4.0
+    helm.sh/chart: postgresql-12.12.10
+  name: nextcloud-postgresql
+  namespace: nextcloud
+spec:
+  ports:
+  - name: tcp-postgresql
+    nodePort: null
+    port: 5432
+    targetPort: tcp-postgresql
+  selector:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/name: postgresql
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+  labels:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/version: 15.4.0
+    helm.sh/chart: postgresql-12.12.10
+  name: nextcloud-postgresql-hl
+  namespace: nextcloud
+spec:
+  clusterIP: None
+  ports:
+  - name: tcp-postgresql
+    port: 5432
+    targetPort: tcp-postgresql
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/name: postgresql
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: nextcloud
+    helm.sh/chart: nextcloud-4.6.11
+  name: nextcloud-nextcloud
+  namespace: nextcloud
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: ceph-block
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: app
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: nextcloud
+    helm.sh/chart: nextcloud-4.6.11
+  name: nextcloud
+  namespace: nextcloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: app
+      app.kubernetes.io/instance: nextcloud
+      app.kubernetes.io/name: nextcloud
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        hooks-hash: 9525c2748a6c7cd0e28ec740623d0b3fa5a75c83b51ccfd136bc89c76737b204
+        nextcloud-config-hash: 368ef30ea6c1d4f529d034b4ed3dd17f086a1f040c0c51abdfc4fb94171374c1
+        php-config-hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+      labels:
+        app.kubernetes.io/component: app
+        app.kubernetes.io/instance: nextcloud
+        app.kubernetes.io/name: nextcloud
+    spec:
+      containers:
+      - env:
+        - name: SQLITE_DATABASE
+          value: nextcloud
+        - name: NEXTCLOUD_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              key: nextcloud-username
+              name: nextcloud
+        - name: NEXTCLOUD_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: nextcloud-password
+              name: nextcloud
+        - name: NEXTCLOUD_TRUSTED_DOMAINS
+          value: files.srbii.com
+        - name: NEXTCLOUD_DATA_DIR
+          value: /var/www/html/data
+        - name: OIDC_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              key: OIDC_CLIENT_ID
+              name: nextcloud-oidc-secret
+        - name: OIDC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: OIDC_CLIENT_SECRET
+              name: nextcloud-oidc-secret
+        - name: OIDC_ISSUER_URL
+          valueFrom:
+            secretKeyRef:
+              key: OIDC_ISSUER_URL
+              name: nextcloud-oidc-secret
+        image: nextcloud:33.0.2-apache
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            httpHeaders:
+            - name: Host
+              value: files.srbii.com
+            path: /status.php
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: nextcloud
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            httpHeaders:
+            - name: Host
+              value: files.srbii.com
+            path: /status.php
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources: {}
+        volumeMounts:
+        - mountPath: /var/www/
+          name: nextcloud-main
+          subPath: root
+        - mountPath: /var/www/html
+          name: nextcloud-main
+          subPath: html
+        - mountPath: /var/www/html/data
+          name: nextcloud-main
+          subPath: data
+        - mountPath: /var/www/html/config
+          name: nextcloud-main
+          subPath: config
+        - mountPath: /var/www/html/custom_apps
+          name: nextcloud-main
+          subPath: custom_apps
+        - mountPath: /var/www/tmp
+          name: nextcloud-main
+          subPath: tmp
+        - mountPath: /var/www/html/themes
+          name: nextcloud-main
+          subPath: themes
+        - mountPath: /var/www/html/config/proxy.config.php
+          name: nextcloud-config
+          subPath: proxy.config.php
+        - mountPath: /var/www/html/config/trusted_domains.config.php
+          name: nextcloud-config
+          subPath: trusted_domains.config.php
+        - mountPath: /var/www/html/config/.htaccess
+          name: nextcloud-config
+          subPath: .htaccess
+        - mountPath: /var/www/html/config/apache-pretty-urls.config.php
+          name: nextcloud-config
+          subPath: apache-pretty-urls.config.php
+        - mountPath: /var/www/html/config/apcu.config.php
+          name: nextcloud-config
+          subPath: apcu.config.php
+        - mountPath: /var/www/html/config/apps.config.php
+          name: nextcloud-config
+          subPath: apps.config.php
+        - mountPath: /var/www/html/config/autoconfig.php
+          name: nextcloud-config
+          subPath: autoconfig.php
+        - mountPath: /var/www/html/config/redis.config.php
+          name: nextcloud-config
+          subPath: redis.config.php
+        - mountPath: /var/www/html/config/smtp.config.php
+          name: nextcloud-config
+          subPath: smtp.config.php
+        - mountPath: /etc/apache2/conf-enabled/cloudflare-headers.conf
+          name: apache-header-fix
+          subPath: cloudflare-headers.conf
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - until pg_isready -h ${POSTGRES_HOST} -U ${POSTGRES_USER} ; do sleep 2 ;
+          done
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              key: db-username
+              name: nextcloud-db
+        - name: POSTGRES_HOST
+          value: nextcloud-postgresql
+        image: docker.io/bitnamilegacy/postgresql:15.4.0-debian-11-r45
+        name: postgresql-isready
+      securityContext:
+        fsGroup: 33
+      volumes:
+      - name: nextcloud-main
+        persistentVolumeClaim:
+          claimName: nextcloud-nextcloud
+      - configMap:
+          name: nextcloud-config
+        name: nextcloud-config
+      - configMap:
+          name: nextcloud-apache-header-fix
+        name: apache-header-fix
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: nextcloud
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/version: 15.4.0
+    helm.sh/chart: postgresql-12.12.10
+  name: nextcloud-postgresql
+  namespace: nextcloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: primary
+      app.kubernetes.io/instance: nextcloud
+      app.kubernetes.io/name: postgresql
+  serviceName: nextcloud-postgresql-hl
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: primary
+        app.kubernetes.io/instance: nextcloud
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: postgresql
+        app.kubernetes.io/version: 15.4.0
+        helm.sh/chart: postgresql-12.12.10
+      name: nextcloud-postgresql
+    spec:
+      affinity:
+        nodeAffinity: null
+        podAffinity: null
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: primary
+                  app.kubernetes.io/instance: nextcloud
+                  app.kubernetes.io/name: postgresql
+              topologyKey: kubernetes.io/hostname
+            weight: 1
+      containers:
+      - env:
+        - name: BITNAMI_DEBUG
+          value: "false"
+        - name: POSTGRESQL_PORT_NUMBER
+          value: "5432"
+        - name: POSTGRESQL_VOLUME_DIR
+          value: /bitnami/postgresql
+        - name: PGDATA
+          value: /bitnami/postgresql/data
+        - name: POSTGRES_USER
+          value: nextcloud
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: nextcloud-postgresql
+        - name: POSTGRES_POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: postgres-password
+              name: nextcloud-postgresql
+        - name: POSTGRES_DATABASE
+          value: nextcloud
+        - name: POSTGRESQL_ENABLE_LDAP
+          value: "no"
+        - name: POSTGRESQL_ENABLE_TLS
+          value: "no"
+        - name: POSTGRESQL_LOG_HOSTNAME
+          value: "false"
+        - name: POSTGRESQL_LOG_CONNECTIONS
+          value: "false"
+        - name: POSTGRESQL_LOG_DISCONNECTIONS
+          value: "false"
+        - name: POSTGRESQL_PGAUDIT_LOG_CATALOG
+          value: "off"
+        - name: POSTGRESQL_CLIENT_MIN_MESSAGES
+          value: error
+        - name: POSTGRESQL_SHARED_PRELOAD_LIBRARIES
+          value: pgaudit
+        image: docker.io/bitnamilegacy/postgresql:15.4.0-debian-11-r45
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "nextcloud" -d "dbname=nextcloud" -h 127.0.0.1 -p
+              5432
+          failureThreshold: 6
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: postgresql
+        ports:
+        - containerPort: 5432
+          name: tcp-postgresql
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - -e
+            - |
+              exec pg_isready -U "nextcloud" -d "dbname=nextcloud" -h 127.0.0.1 -p 5432
+          failureThreshold: 6
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits: {}
+          requests:
+            cpu: 250m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 0
+          runAsNonRoot: true
+          runAsUser: 1001
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: dshm
+        - mountPath: /bitnami/postgresql
+          name: data
+      hostIPC: false
+      hostNetwork: false
+      securityContext:
+        fsGroup: 1001
+      serviceAccountName: default
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: dshm
+  updateStrategy:
+    rollingUpdate: {}
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+      storageClassName: ceph-block
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: nextcloud-oidc-secret
+  namespace: nextcloud
+spec:
+  encryptedData:
+    OIDC_CLIENT_ID: AgCW5Nt9laBGMFW1pJcg+8TNOTAPTd0j/ql2ufDQaPJrJnuvZUOdK5ELoTvvARs/3J3mkfjB3BOUkIVWv5j7cI//18VZh21Q6qrA54ZaJIG62SUnDS9mVErY/LUgZgnm92Ssn4dJYvLs/FL5wJR3OPgz+JWGKuzI4mMEBARAs2c4Ff0+yIOaY6P+e6NdUuuhUJs3PxeFA37BYVNzBtkpIyfplT9WS9+1ACZLRuWVyot6STiMYMfNjCf8WKuFN57YfzZwHwyITE17ouSoXgmZ09K/uKnq35hal47up8mU3fsIoOmbJxW2agDS6zeQgbAg+0wQy9ZJ4W4Ix1Sp45K6IIK//n+PpS7xwlnSMik63gsQjcvIJGmIDhUwcGic5/iCDz9cDAz6DbgHdJGZr+Xac9FW33HuEASqyxvNoCQgC23ha+wLMAR5/hycz+ghwRAMLTZtgCFzxctgXlIvXzS1E1XpVRZzPTAOPQo5zB3RLL7e9DAblAS+ElsqctFhEShSclcjtwWdc2hnjQGpDjMoFORh+meVvLYgZbYLfs2nKYyRNYmBzLslnIf/sJTMNo59iRhg45Li+3HU4sG+lVliJ/ILNUaJyKQtq4LkyXzoX5QO9I4RZBIU0siSS7pcyJFf0OsPwdz5oUG2DCEYgAL2zimijdwnlCl4kDGgH6ADpEGdYvFx+U7Q3jtEsle8AHvfEqrT4HrjAbFOH1sjqRGUlrQ3
+    OIDC_CLIENT_SECRET: AgA/JEHQ7vxwkEmuKMbg2E0fSDTZBQPZX/mcxZlujPzT5mr2s+A4GtNdIapxaqMG6ydxtDLt0Rt0r38xe/yglkusYn+WMe2wAcLT1d78MDtLUZljfmVZzdxB26X2TMyO0H63YKcFXlP+BuX6ERALSLQtUuPYiFeVX0Wcn+UwzniDCU+dvaU3JnmY4XYwldWWITTWqjx1/URpBcIirKZuHiT0zdnu3p1q0wv57teNe+BTHjT0zqkHdrop8U8kY9HUNvWQYuDELnASXUAffHjxDqS5nIwg3ZU4PjLvLD4uT6UXRYJKyqVyJZjeO4yUSjfhheJWIgcF/+tkvTXznCDJScp8UJ2rgqjETZ5fUQMqRkzMuGLsDlmW8jJv5Wsn0KVeQCa2Ouw9XPpP0NJaILYGNK8DR38mRIIhwQAT9ncdK9ZX8rkSd3Y+1KA77zkCTYajC3nywoZwFEpNGMmzt3q43sMGMl4Q0YmlIVVdZ1PGrDE6mNypOnv0/tMkQI6AK7EvAN+AmHxEP06/04Nmt8Di+fx6MVUJ5/INR0ZP+S1d4l0fW29pa2nBg296KQWjlmqsZ754WTHoM9YR629UYkDuZAJchcuba3Q1IhPG1CJFpNZhNZ5SEtV8mgZ7PT7yxljiTdp05pvMDNmuo8iapcs0BpiuJSi8OtNqSqeXdMu0kpkVPF1841ZKlKCQ+XI5ryPYXoTSbrnG7vly7dN1mqUXkqW2NydIbJwk9dDIaF2zNo+glQ==
+    OIDC_ISSUER_URL: AgArNQGTbsWGi3hMwp1Jddqjn8xox5XGovT5bH9r2/8PenImxtoj3razzjETG7koFfkkjhLu1cKcaqHZcuxgn8CLy4P0O4CqIs5XK5tzxZFGdMjpBw4+YezRYqg68eegb4IhuAyXexYicYmAMYhTtWH+iJQGnNe6wHQ7Sq71w20rc6QuQg0R+X5GamjsRFyrItUcepCwYPJtZfh1p6T5nQAny+SzrPRgbsCrBc4D121ubaKKp6fs3Tw8rz7QbXujUvCi3gYdmRDBtkrYUL0dTdeikcnTsAz5d6qKl4Hx+kG9YYvtoF+zJdaN+IfQTvjcbPkbdft364H0GoWxsSBSMGmVESRwa0okro+mxHhColZVWIuGB2BVRVqfQaIAwlAt40D5ZM/42Wvsvp/XRTdgMfAmVqDombY7CTz0o2uzX/tQkeuLhWImek8QLUtCN7XIdwFB2nd/ZOn7G+25vh/lfc4RQKnDZW7s3BsHZ9h5w9c7fbp8oDA4efQZR1OfzX5wx0qeRALMDjQcFyJ4LMBjAfUK1bCwRVfcV67aCliqckVslPMMhCmkGk9VBbUYdUfJpCVT8CLUMqIaKcsJ/Uq1vmktFCzbS82MB4qMpfzU4ZPS7iQaWWookKtJoLurk3YqDF1MhsBVHB1q5P3xUzHVhKrswjSNgkm+BV2haIrFulZ3z5x4UCCjiQBrZ/t2UVDDd/8d1tT7e1ChvxEktKhNcHmCzC52o8EJiZ9/OTVOr7quYCRM2DaY
+  template:
+    metadata:
+      name: nextcloud-oidc-secret
+      namespace: nextcloud
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: File Storage
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Applications
+    gethomepage.dev/href: https://files.srbii.com
+    gethomepage.dev/icon: nextcloud.png
+    gethomepage.dev/name: Nextcloud
+    gethomepage.dev/weight: "20"
+  name: nextcloud
+  namespace: nextcloud
+spec:
+  hostnames:
+  - files.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+    sectionName: http
+  rules:
+  - backendRefs:
+    - name: nextcloud
+      port: 8080
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: nextcloud
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cloudflare
+  podSelector: {}
+  policyTypes:
+  - Ingress

@@ -1,0 +1,316 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+  name: outline
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: outline
+  namespace: outline
+spec:
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  selector:
+    app: outline
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: outline-minio-data
+  namespace: outline
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: ceph-block
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: outline-postgres-data
+  namespace: outline
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: ceph-block
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: outline
+  name: outline
+  namespace: outline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: outline
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: outline
+    spec:
+      containers:
+      - env:
+        - name: URL
+          value: https://kb.srbii.com
+        - name: PORT
+          value: "3000"
+        - name: FORCE_HTTPS
+          value: "false"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              key: DATABASE_URL
+              name: outline-secret
+        - name: DATABASE_CONNECTION_POOL_MIN
+          value: "1"
+        - name: DATABASE_CONNECTION_POOL_MAX
+          value: "5"
+        - name: REDIS_URL
+          value: redis://127.0.0.1:6379
+        - name: PGSSLMODE
+          value: disable
+        - name: FILE_STORAGE
+          value: s3
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              key: MINIO_ROOT_USER
+              name: outline-secret
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: MINIO_ROOT_PASSWORD
+              name: outline-secret
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_S3_UPLOAD_BUCKET_NAME
+          value: outline-data
+        - name: AWS_S3_UPLOAD_BUCKET_URL
+          value: http://127.0.0.1:9000
+        - name: AWS_S3_FORCE_PATH_STYLE
+          value: "true"
+        - name: AWS_S3_ACL
+          value: private
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: SECRET_KEY
+              name: outline-secret
+        - name: UTILS_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: UTILS_SECRET
+              name: outline-secret
+        - name: OIDC_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              key: OIDC_CLIENT_ID
+              name: outline-secret
+        - name: OIDC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: OIDC_CLIENT_SECRET
+              name: outline-secret
+        - name: OIDC_AUTH_URI
+          value: https://auth.srbii.com/realms/homelab/protocol/openid-connect/auth
+        - name: OIDC_TOKEN_URI
+          value: https://auth.srbii.com/realms/homelab/protocol/openid-connect/token
+        - name: OIDC_USERINFO_URI
+          value: https://auth.srbii.com/realms/homelab/protocol/openid-connect/userinfo
+        - name: OIDC_LOGOUT_URI
+          value: https://auth.srbii.com/realms/homelab/protocol/openid-connect/logout
+        - name: OIDC_DISPLAY_NAME
+          value: Keycloak
+        - name: OIDC_USERNAME_CLAIM
+          value: preferred_username
+        - name: OIDC_SCOPES
+          value: openid profile email
+        image: outlinewiki/outline:1.7.1
+        imagePullPolicy: IfNotPresent
+        name: outline
+        ports:
+        - containerPort: 3000
+          name: http
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
+          requests:
+            cpu: 50m
+            memory: 600Mi
+      - env:
+        - name: POSTGRES_DB
+          value: outline
+        - name: POSTGRES_USER
+          value: outline
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: POSTGRES_PASSWORD
+              name: outline-secret
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        image: postgres:16-bookworm
+        imagePullPolicy: IfNotPresent
+        name: postgres
+        ports:
+        - containerPort: 5432
+          name: postgres
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-data
+      - command:
+        - redis-server
+        - --appendonly
+        - "yes"
+        image: redis:7-bookworm
+        imagePullPolicy: IfNotPresent
+        name: redis
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+      - args:
+        - server
+        - /data
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              key: MINIO_ROOT_USER
+              name: outline-secret
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: MINIO_ROOT_PASSWORD
+              name: outline-secret
+        image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+        imagePullPolicy: IfNotPresent
+        name: minio
+        ports:
+        - containerPort: 9000
+          name: s3
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /data
+          name: minio-data
+      priorityClassName: homelab-data
+      volumes:
+      - name: postgres-data
+        persistentVolumeClaim:
+          claimName: outline-postgres-data
+      - name: minio-data
+        persistentVolumeClaim:
+          claimName: outline-minio-data
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: outline-secret
+  namespace: outline
+spec:
+  encryptedData:
+    DATABASE_URL: AgBt1wKXfeIadZyvGwZ3Ateu21bPSIn+L7h8oHyRcOyyq3InflVFNmBg0V2naHpJNzhAC7OtnaOoCo1H/MEa3Mseg6GUJEvATf1oHrooP3HrWz9U5kqkbmxi/qQ7+scAa4usjcF7lzEppXMbEsubD2epnS17uYm3ORa2VmJrDxEegyJYBCbahyZzbAhUyy6/LwuHhutCZIIKA7/wCPHTb9Jq29Ip3afxqszcZfGvyjitgo8akUxHloC8Juqg94SdzPa0zre09oPM1IztGYVv1RhlBpIpksgTaFQVSPiTGMvnPeKs8nTMghO89A6EJ1HWxTEcrSn2UT5zKHj6fbTsDSjZ6fyJpD2ij6Ny3hOfvcTDwsH2cRPtIE6OpYjkDVKVM9qIYA+qfI6o5Nv7WNq3nBnWsN2v4I6kSRhTvLeC/MHg4Se7vWs2ZXNYDUBs39jruu5lTWoXRJjx8TWfbLQuh+nnEY2tCJ3z9fZpGVBaOcw5rSf3knrBcy9Xke8OeTid/9aFf68LWj8WmATVj3cHsm/bAy+NXbKPLtRRPYs/Q5+YGIjJnMqXIK4KLTI6wXfI3MpUslKIsA/8OauywGjOpIEROh+4B/oBVcdbUBATS6p6r2f3OyOkKU2ppft8/O1PtCjFLwGeHBZWC9HdVpprywD/8JklrKm3nAZqNoNKPLucQA7PGiftWS3gL8wJqEoAe4V9tql+ul3hXf7WTgIwvBBAgbbWyfup/krB/rKFKauWxDF8Aq+A3QHMc7HDu+s5dhfT1JtfpV9277UicJGcrGWKYrswuoyGYDWNiA==
+    MINIO_ROOT_PASSWORD: AgBlHK5y3V9mJtfMhRcnq4MSRznBHl7Gul80gPVIozWcrp90ngt2RTnEeSMd0zPRbytlAobk3il5eSOJSXR88dIbjcy5A6ditnMVkccqgcBfwzGCBpwNY7qTgASSEn2zje1/mLH0DHN/EXSKq3ukKY4yOu4lW7w3j7PlA+lUwVcEKAWgm+VpG2SDS7szZcxTQ158t/Nd/wAZjaNrC+OZLPoGj4DfX77mhYeB8q9z/BPWdSZdIMYJ8abyLsVeGt9/md52CYuH4ySFbaQ8SmDZNoT+IL8uFNptZqaw3gIwt8/wGguC7e0WQbv25qcYZoRlk1leDVLGnhK5KwfjGbyC0BopJpIaZzpzJsFbtvLOK1ngs9/7IgtrClZfKkgnZk4Lh5AlgjZYBYq0o/4m2brmhRoXVzCYJPnthQnzUF4I/WNZf2KbZDBFDHtKcSXEqGen39m9BoTluHakk9og14YKjJjrW3zaVC539gXbeBFU6vBKyBMwe04iNTyp0L+GvzBtvhAeAcCafVmmEkFJTBf7sLtE3QBd/0jHBAmtbb+2M9oouehQ5TNcHXl3cmk63XTT54botNMnSjwN0ZI4Bb+AyiCB5+6Af3M2yohdoWZ0ak4ZGsMFucazu/6/5EaiKxwsX2te2VP7GKSRtUWR4YS61Bytt0tc9WnB8m1JuyNSG9uZRbgbW2uyjOXa0RXtK2JLrRnvpKtBpGHaCsewNZhK1iiGiAWGAwFok3HyvGJ//bsPKg==
+    MINIO_ROOT_USER: AgBkmqUthYDLyUiTfwk6W8Q7v9JSspRZktiaqFYis5VSEaAgGWD9mEW4kn/kIoXxH1JOjrlOE8RuJHu3lU/aAeN9AVnB4p5ClzIHetGVGX9onLP65I6t6PSXvW1E1cUZy2QHKwWP5DONAxQ6KXkSWAtbn0Qz5RvWwB/1roiVa+JNVryqiL/VN54pwp835Hyr2vxB3p7at/auPevws4BP4G0EtGmyzM/gL7nRmwkXJ+jo9TppEcFkG7UDTF76Xpb4euh2X4Kl4ll0viUyzM8fCHpLKIZYaVZ59BIEcPRU3gd4LmH//eNKxZUI8/yk/7uLIRGja6XBjge5bpihmf5MBIpBmI6GcbS3ifHHA98qyEoFoeuifhWx89PEZSYJ/PVWh8IWeXiL58q0GgleMf9giPpJcr9/r5+9R02glKvPnHCPaGfwZe8jrjiBGM3NOtpquGHuGeNCG98/Yak0+Pi2jpvfK9K1cvifnTgn7Frbb0C//iVI3QeUUOisQsucVe/7Imye94OGpP3TMzlb1230zuQ5OI751iK8f5aafAjUgiETIKfZ70PO6mqAmYTpaaUDXcXmgDAM39xqfB4iJ9ntZAjIs8XgRkTEmjb5109o5MhmLW/IGpiBWITFKJtKVIGnG2AeaXC/BUlI2M3UknT2x8VwX7mv7Tv0NA1leEJmxEPRBcXyYMExtk8gJSECBbx+jPbvbyzMtGLBHVZY
+    OIDC_CLIENT_ID: AgACC/sUEgzpU05iaEAl5RLQkg+2Iz/lI4dVbSwF0WHy3da7ZsNw2wkFB6zUVoNzZBM/6zYyssL9MHAJaZY96MhyFQukXYMJLuO0UCfAX9y/H8baVtIWl5cye6rjDi8V6XCHTU19+QIQG6KusXqZjKDfOy2/IppmGC6cH8EtLgAfjy6C74WsDo7fAi6EZBO4mALagnZ6raV0tBgukQarydj1depPLZUE68sJG22iTfc+Lv3xXsmz15JSDXVff+tA//TBywVk925Hb56EYk+I17LD7KPOvn183XWoolc0IvwzDDn8kBCFyZ2m5T2vdbfrJwbHiyu9W7zKacQJhlfNQFLoZ2qnN3LcBtQGJ+Nx554fgl+9EKDOMw7NYlNFEKOvuoLX6HvMDxLHSG3RNi0e2rvKge78tNYXMW2DqzuJa/LQh15F8jgvP9Lxzl6W1L92dzlf4ouRVpYSYlB2/LkWhh0DpeUnyL6rCE/O+5LNo6wT4+4r94WQZl6/z529cqllF6+yJfof96zF2JktXQAYPbzQdGWfFb4ZYi4SXWK4809YAJnKYUAHrxPN0YNSsl+Pdwya+/1XfxRaduANUYWVf0ljsUNCM9ypFoOIVEzBDdJsVejg7l7Y/wQCDzGuOuayBTDHkaG54ESUldrYnh4aZPMYM6TyPXyc97wVbDzYtAz2TGVwX9avivsbxC5ScRradfi+PN8txBwKdAYyvD66jA==
+    OIDC_CLIENT_SECRET: AgB9/X/Ae0KjtI8S4JigizMipFaqR6rbL3CQm4pIOQ7SPoB2bQNwEekgA87blrvI35M1w6J56QN/RVdsCnprbkk26qV4VEIEMHbMtTTee8v0XTm2DgKzsUwkyMjcjk7AojJfU2y/MKUOcGK7iW57q3S1lN6Uqv1KRE8xVFCHwnxb7GFjbIzJKmWhzOc4cLDlhG+gsoT3EKqeAZ5O1McciKvZEOPWcSZa4FAlfocCz/Y5M0Ghq37oFVXLja8fH7oyOsizIXbGVeaxt+YHTQbq+sPrxC/Suh77PBuU+BiulW0N0Z7XK+8WihKtiLOsa35O+5Ad8oRsE8c+lU9txDqx+ASw9srIpcjA7UtrtwJE55qnCel4xWPc9HFo+/rHa+PfmDQDbRvMLf8ny6Grt4v9+xzmtFWT5kYViGfXStDt6T5ycNLkq26sOd3Pr/qjawcMwh5MUO8EauFean0qCXYV7H6FGPVaIxdoI1OXIhq/VCcURwn8TGhgtkM2ggVVJgZjcrhEJ6GRLtgrhIEXZVuPPAnHhbmh6K/wdZUSmnDItamRy9UWPKDUGXXC/320dKlwUQ+lbPrGbHG+gbSpPF9N1HfjNpUQkEQlUfgEZjJ0GQV3peaL6fw4MsWYb/2McOBT7DdTb1fvKdNi/Iz7crDGK8yIlWZmSbDhJmbyj5OxtT/pUv+8YhaKB8F109uTQ0BwSXaY+C0RJJeeZ5b/o0abazXg/Ufq33qTJljo9Ny8D1K0Rw==
+    POSTGRES_PASSWORD: AgBB0F0yi5mTHKrXXMXr0+qCh9avWLlKAqc2sHHn2Y7DLDwqs23sQsZ1GCnhHw3RBQTHvtWpHC02Dp6MMw0QFv6twHuMen1KaeSjepKT3INWVGscVcmW4Td9bHsBzYpW+26BQJWEjqmc30VufZr0cAd0FxiCqyMD9AzkwXducLKO0ROLLHxFaATru78UDlrDGEi2hG7gzclWDnK0gMPt2X0R5dGnSIHRJ09kB949BeRYts69xhAqBs68pBDT5SVUCk9Gfc1DAwlytNmW7uoAZHXYr3iFWVuwLeA6DJO+f6xzZoiRQ4RSgxjQt+J6lz5Iq3RRXYutfwFt85qAR0zPaqF5KKyEcEQzVAKQtVutQKSpwJGVVNfUXIPSRrxMn2O9xRkedQSqGuipysAbqUjeb8bddh7uSdd6jEQU9V75QSyM5QrNMmDz93ewMBVHKmk9bFrYHnCOcGc+l1y6RBR36kHyY/Rr2jKajz5ZqCHNg0ya/J8hax3IEdVIjbLPZ0PP9jBt8UxnDkLTTz3p5Jsr5Y95IccnSN+OxIo6txRuYyMZp1ud1owQ3Xwcb146pcjMd4Yu4tiN/6LCtBhol0/BEvs23+hktlU2Pv2NAnLzE81Qrx5whQrSaNy06TIJGrRQgSZ/gQIy7GDGBfiSoq+sfGQGzVsjsdFgLG9fCv3jiAVnVj36gBj1qVnVEhbB26aSziTAtF6YYkRa0KDj+PgwvBDu4479WTiU5csz/A8Rb1kCcA==
+    SECRET_KEY: AgA+GV+2ujeO8OduQPtzX7VIuzrdBHgYhPOlHsQC0ITLMYUHloo99tVNlN5LIeXxkBg69szRL+r1Camv/CigPT2MBIa3nzrHs2CEGj481Oe4TXh5CfFpxbcV548JG2UHALvNRuZOfF3KKnS0UDaxB60k80Ccmtu9jCDjimdQF/rAHzxkjQD8p4ErNphRSPDoQM7T5WsWhD/6D3OIqItdDRNbTa+pbZGs9i18dwmFSM/jJKdKot75nbFzCCrnsaw1xGhIE/vsulOCk4piRZK4hytPongEn1s9HQlRjzUoFKDFJ3vwY/2+uECM0CwBRi0JnFT1u0qq8bsqtnt8MuaSsAyF4nP5J6y8aKD6N3UxSda6tZwq3Jw3O5zQE4nUKlyzekDdn9lAmo9glgtc49yDoTfWi1mcg7AjXaAp3cJbtb+3Uvca+fAPu2JPfCxbyPViH2Kyjc3LZ+6YlS2XbjGkGCEkaDyDg48AOQU5gohez8zGktJ4N1t+A+TNH4jBJus6c6RpLxnlc69SdzfN5Dns9gaPsiiq6jZi1OCeqWB6sVLs8LKWMEuuAyizN2hLOFysuK/UEnEEbnllvVPXfbDmvqyzwhrcqBw1O8ME//fkMZENZV4ymdqODgcH2PK88h0bV3ifWPBtGz9fC3G4YM9sOuTcS3UJLJ4Fx6EpmWVpEat6ZBl+rZgIeW9UkrGXkEo9tYll/W/8eLRpxiT+Ep2RVsIGCPs3h0EapdveniVNq1QyHhPMxm+MvZf/VeM0lfOkgpkcX9HumrrPJms7BUNNjxGb
+    UTILS_SECRET: AgBVi8QydPyEWXsJlK3SdHUzvld2hSbp2DcL5inKeY/n/JgmBEs1m0/WLXo492lWrzMox8Avewd8fi1rePriWtjS1neAdIdNMvYv3oW7J89CoNFndsxgsOiOncgac75awDY24R2c+wC5KYtb9Q2l/wBEPLLwgwAKdtHK1q3NvurAscHRvQJTiUQNqAeyTYh5xbXG18Ti+bAsmwNS3/XWndDGjXTqC3xQ35rJL22CL63cuovxFTVOLvBnRZzWn52EIrDwoPuK9lsNNF8ZLY0MIkKaqTzEdsz1i70zanaDC6y4etpaur86QydGOZjswSxSt8JgwwYUHJ2UTQCFXlP4J8GjzrGU1dN3SptBoPHsKF2YcXDblBMeNSN0n2+mYihtUOedsA/DybyqAiDdJxXkPBTz9VjroHnmh+aMORt18UdCc4wBry3yQhM7AuO6PTvocQzIrlpvEuRmCQjjstTvAFEtBguPmZ3rGtwBWh0vRY3lQw0XSauX7+WndtXEMD31/TkFw78MqjsuncqSm7gTI07p28g7jcJi/b9H7n7aGtOoG5hZW68TCNqezPvnCVdVT05I5S74XGfZs/e6SwVzqu2FFUtIBhV99opYVBhKrA0lNlU/M8XPkOr82TnPMdCPXF5RmfS7s1GQJIhlhhbLhbH+Iw5xpvXvBQYQyjBi8nWl7draGMLl9IVV0gE43wINX/dCSPoW2d07SspaGRbchue4sRwFTMHSKMfWrW5hIWO+d3U/9Bz1rD9zt9YPexsiUw1P793IfPpVlThsiYkF95aL
+  template:
+    metadata:
+      name: outline-secret
+      namespace: outline
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: Knowledge Base
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Applications
+    gethomepage.dev/href: https://kb.srbii.com
+    gethomepage.dev/icon: outline.png
+    gethomepage.dev/name: Outline
+    gethomepage.dev/weight: "23"
+  name: outline
+  namespace: outline
+spec:
+  hostnames:
+  - kb.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: outline
+      port: 3000
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: outline
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+    - ipBlock:
+        cidr: 192.168.8.0/24
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: fdae::/16
+  podSelector: {}
+  policyTypes:
+  - Ingress

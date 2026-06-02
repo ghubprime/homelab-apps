@@ -1,0 +1,384 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+  name: znuny
+---
+apiVersion: v1
+data:
+  oidc-header.conf: |
+    # Map X-Forwarded-Email from oauth2-proxy into REMOTE_USER for Znuny HTTPBasicAuth
+    SetEnvIf X-Forwarded-Email "(.*)" REMOTE_USER=$1
+kind: ConfigMap
+metadata:
+  name: apache-oidc-config
+  namespace: znuny
+---
+apiVersion: v1
+data:
+  ZZZA_OIDC.pm: "package Kernel::Config::Files::ZZZA_OIDC;\nuse strict;\nuse warnings;\nuse
+    utf8;\nsub Load {\n    my ($File, $Self) = @_;\n    \n    # Override default DB
+    Auth to use Apache REMOTE_USER injected by oauth2-proxy\n    $Self->{'AuthModule'}
+    = 'Kernel::System::Auth::HTTPBasicAuth';\n    \n    # Enable SSO for Customer
+    Users as well\n    $Self->{'Customer::AuthModule'} = 'Kernel::System::CustomerAuth::HTTPBasicAuth';\n}\n1;\n"
+kind: ConfigMap
+metadata:
+  name: znuny-auth-config
+  namespace: znuny
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: znuny-app
+  name: znuny-app
+  namespace: znuny
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 4180
+  selector:
+    app: znuny-app
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: znuny-mariadb
+  name: znuny-mariadb
+  namespace: znuny
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+    protocol: TCP
+    targetPort: 3306
+  selector:
+    app: znuny-mariadb
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: znuny-app
+  name: znuny-app
+  namespace: znuny
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: znuny-app
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: znuny-app
+    spec:
+      containers:
+      - args:
+        - --provider=oidc
+        - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+        - --upstream=http://127.0.0.1:80
+        - --http-address=0.0.0.0:4180
+        - --email-domain=*
+        - --pass-user-headers=true
+        - --cookie-secure=true
+        - --cookie-name=_oauth2_znuny
+        - --cookie-domain=tickets.srbii.com
+        envFrom:
+        - secretRef:
+            name: oauth2-proxy-secret
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        name: oauth2-proxy
+        ports:
+        - containerPort: 4180
+          name: proxy
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+      - args:
+        - |
+          cp /tmp/znuny-auth-config/ZZZA_OIDC.pm /opt/znuny/Kernel/Config/Files/ZZZA_OIDC.pm
+          chown znuny:znuny /opt/znuny/Kernel/Config/Files/ZZZA_OIDC.pm
+          sed -i 's/^Listen 80$/Listen 127.0.0.1:80/' /etc/apache2/ports.conf
+          exec /usr/local/bin/docker-entrypoint.sh /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+        command:
+        - /bin/bash
+        - -c
+        env:
+        - name: TZ
+          value: UTC
+        - name: ZNUNY_DB_TYPE
+          value: mysql
+        - name: ZNUNY_DB_HOST
+          value: znuny-mariadb
+        - name: ZNUNY_DB_NAME
+          value: znuny
+        - name: ZNUNY_DB_USER
+          value: znuny
+        - name: ZNUNY_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: MYSQL_PASSWORD
+              name: znuny-db-secret
+        - name: ZNUNY_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: ZNUNY_ROOT_PASSWORD
+              name: znuny-db-secret
+        - name: ZNUNY_FQDN
+          value: tickets.srbii.com
+        - name: ZNUNY_AUTO_INSTALL
+          value: "true"
+        - name: ZNUNY_ORGANIZATION
+          value: Scots Lab
+        image: docker.io/andreynsafonov/znuny:7.2.3
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - curl
+            - -f
+            - -s
+            - http://127.0.0.1:80/
+          failureThreshold: 5
+          initialDelaySeconds: 600
+          periodSeconds: 30
+          timeoutSeconds: 10
+        name: znuny
+        readinessProbe:
+          exec:
+            command:
+            - curl
+            - -f
+            - -s
+            - http://127.0.0.1:80/
+          failureThreshold: 8
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 10
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 200m
+            memory: 512Mi
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /etc/apache2/conf-enabled/oidc-header.conf
+          name: apache-oidc-config
+          subPath: oidc-header.conf
+        - mountPath: /tmp/znuny-auth-config
+          name: znuny-auth-config
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for MariaDB to be ready..."
+          until nc -z znuny-mariadb 3306; do
+            echo "MariaDB not ready yet, retrying in 3s..."
+            sleep 3
+          done
+          echo "MariaDB is ready!"
+        image: busybox:1.36
+        imagePullPolicy: IfNotPresent
+        name: wait-for-db
+        resources:
+          limits:
+            cpu: 50m
+            memory: 32Mi
+          requests:
+            cpu: 10m
+            memory: 16Mi
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: apache-oidc-config
+        name: apache-oidc-config
+      - configMap:
+          defaultMode: 420
+          name: znuny-auth-config
+        name: znuny-auth-config
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: znuny-mariadb
+  name: znuny-mariadb
+  namespace: znuny
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: znuny-mariadb
+  serviceName: znuny-mariadb
+  template:
+    metadata:
+      labels:
+        app: znuny-mariadb
+    spec:
+      containers:
+      - args:
+        - --max_allowed_packet=128M
+        - --innodb_log_file_size=256M
+        - --character-set-server=utf8mb4
+        - --collation-server=utf8mb4_unicode_ci
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: MYSQL_ROOT_PASSWORD
+              name: znuny-db-secret
+        - name: MYSQL_DATABASE
+          value: znuny
+        - name: MYSQL_USER
+          value: znuny
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: MYSQL_PASSWORD
+              name: znuny-db-secret
+        - name: TZ
+          value: UTC
+        image: mariadb:10.11
+        livenessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+        name: mariadb
+        ports:
+        - containerPort: 3306
+          name: mysql
+        readinessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: db-data
+  volumeClaimTemplates:
+  - metadata:
+      name: db-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: ceph-block
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: oauth2-proxy-secret
+  namespace: znuny
+spec:
+  encryptedData:
+    OAUTH2_PROXY_CLIENT_ID: AgA+/cT1VpDYgLrFVwwD4FyFhMpiRun0S80ZkRyHrFOWHLWcLileV1F7ehOiZ7fZk8ms/K8emViQJC/AcviZm2jWMDDcIAbFlK14EYtLHt4suIUrJogmoy+Fk2WzjJBvFFKPxH6VlbjnBQ8WOuCOnrFDwIb34CDizcZGiGHQeAA+fx9zdL2GrG/BO85sC0j4iPc+TcDXqKe/3hfJzd2e/q/rcRbUYkGstdLbQDLiL5V9qOLpEtk6Hh4mLf5B0xfoMw663EigC152Jfc3Hsu+StofMX0jV6l078OEHmtlxb4tf/Cy+3qVReDQSljcHbkcVXUdL/tRjlM7Yny1GKVrmVch9DJafShLzLHVrahhJPMzhTsj7/D2Hs85/cYv1IBbtqCAFTXvSp5MJu6rqT59geOdbQl9PH3/d31pm9iQt0N5su7f6RSJjOHRIsadOhk7EH170aPDTlsXEwZ5pqC81knkEkAc/N7egx7s3NuxGeT10k4CCChX9bfBXEdfbvmw0AYIF0lYjyyMOzI5MwdnjNVSbqZsngLpXbvTnKqdkKNAF5Kfocq6MecMLn3Bu35Q0QgYDlhgy0f69kkoUqT1uYMgh0hC4oeHlPNmRKfkFgn1jJ4N9fSjndpD0ZImtLo+BUiVVJeUeSymCgczRdSxRinTyLnDqWwXY6ZjmiHQg9tFmLwuRtqWqcIp6kq6h2N4adIuLFSaaEk16icfpkU=
+    OAUTH2_PROXY_CLIENT_SECRET: AgB2OVvZJU/alq+LohanrJ0H/KE1uuvFZi/E4yYyza8MvSq4Loq3pPYQ3I7kwYqv4JIxQ7O5RAkDhE0i2K5iqKBhz6Tp5TExN8SPbe6/6h5x+rvOqfAdfy9dRQlkF5jsSKc4W8ILDde4q0EKZLQywyRWOpqHs0IQA0FLjn2uzzqDJCK5v6pnkg4PaoWEXlCD0eKgGD0orIVC/dsSHu+xYLdQLowyixqj+GtACB5s4pqe+Q4JmCgSfYuXF7nGUGqFSqyreXvpMiY73H42Rw17DbkDdBbtVRqdWEfoWylgIjYPtLHYq0I2fxB8iyhIFIE6ZTtleiVl95bPcVwMNRoRwXxa2cqt3L7SuaWzKkj9GaVa/bVa8tGjA1/D9Wn64rNvA98j4nGDYBqkdyiVF5Gn1h/zHkj5vCjUP2xagwIjqCYp1el+doxkhM/vxP5d7N5M+wUnv+EkgW1Jf66Mz2yr5pP4n5UO3qpMf4GAddHXzBZInuLMQ92n4KAzUIv24RCyh+Msv48kpBDINPj55I9k5RGRkmVedr83DCKhAG+du2D226dqjCSi3FgPiETr8+n8j7DnBa+wfV4WWgt4/lV3fuMJnIMd9M+akP8kiExNffD9W5RQvyHD6J1ueVqCVclSj/xUIt55UbrQjYdJbFBS2dF9V3tnMh4bSCUmyEOfkYjTDCdipUCg6y0DZrJQ++DFDKQZ2sDgSGiEv1CKV7RHGwKHZQtfkq1wrILvZK1FvrCCZA==
+    OAUTH2_PROXY_COOKIE_SECRET: AgCfkvwbLrgHMqi8plHvCLJhm/ejwA5psNdGy4+nzSoAvQdmZa1D0Fg272AMBAsexknTXAwoEbiONn5+aPHD04JkVapjoCSWq2KubMTB5Bq7tgkhTESaWKeAoAIfuMmyOXqZemThOHyzF9ktVorqer3obmiphUakKzeYCNhW4cpPLCVHFnl0Wm2akTrcGo+oAnStEGSgfWdl7XT3k96lBeve6zRMf3sn5KFF6JDhHPIyb/MpqZGsDMv1YBDzriwUyLvgqDJloq7/t/5BYAqcteEwoZsftxECQ1yWijW4w0IciaNAgLDives37t2Pn6uv5vIGMITwHauFxZMT9OVyOehyiJmbafVapS47RRxppnrs6ErAmVltyw8H/hvEwt+wXOYRxQy1cAbTQnckTt8W/iynGx940BP8xQeBbFTaTe9/tA1iyTWPzLEQEEijWmWNtU+n3E+o+psX8KoPZKCLk9LLOTGbHAE1x3VdMHiILr6BlkogToTanZbyiIZnfArbGGtYxzj/MRH/Q4n1Bggd3TWWDYsLwgEWYef2kugpHNItGewqit+xKw5wRt5Y5rfhu9Jueu7d1xtz++RNU0NSKD1QoSRQUfpVVTC8bM0nTf5y6Kf3hCwFo1BG20N102nGTJQ85AFXNbzhJuj5KdRU8jTlfQ6Zke6JSMPvXaFZx08VwMZhJOK3cUloseAk9nADzoU/DtkYq5lko9LoWlR3U9prcBoTgg/PyMKBOqz4/OVlVw==
+  template:
+    metadata:
+      name: oauth2-proxy-secret
+      namespace: znuny
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: znuny-db-secret
+  namespace: znuny
+spec:
+  encryptedData:
+    MYSQL_PASSWORD: AgBTxP4+0bemv6TfPhZy6c1NqjyvQv7CutJ66sDIpov6e30iH82SjgF7ncN4fSXMotsgt+XBRg4ostLoM4kzMnSFsCZWDD4bweWMWJj3KlCIBdmqi37qBpKEKCQVouwdhjRTa6lrwKLrTK0sujkc8jkiG2fWelFsDDoRaC/ZE2jv8FR9RNZYjZjlrvGbWhJ9YKbtq/qYYt720HKzMc7xGKeILkkDD0mR2zJQVcLMGzUzKz3dCSUW6SEYbbB5ZmotseBvHDLnkg9lpNbLlD+md41aUZt9dFsh+hOfJ2VIEiIzNURdLihX46yob635fIemrOuZnLavKWrDQreUHgIDoGui11UBs4KIvOahlmyAVIvx6RU3BtM2kFL9Ube25PVuh3yqzRS9UtgyB1rOCB4XHacz7lMA+k4ebg62m9HprkbwARWcAXmvj/iydi7TCb62HNSGo/m8qjAu8ehfcySDH5hd+V5abXhATBJgEYBWNGBlbIgXlQaU+T7Z5Etf5UP7AmYjBe9tvQoZNC3s6gFFteffkyVOdqX3aV6CNmJ+R32+banLLttV1RP8qqrFp4e5R0DslyTVc2+hL6TzaH8lskVqkjKR7z1Ot4Fjor0Fv7Es4NuiiCFQjnwenna3lTN/yjtS35xOfzWNpmVvf5Cyb/9311i2RJbw0RsNC/2Y5SRZ0untFUP9fNx5w9bHYDArV8Z5DiksDeOe+TtPcR8QFQ0yM+0xo6PV5kg=
+    MYSQL_ROOT_PASSWORD: AgCgNAYMM4tRFSi9tqOI+4zurE6a8bQej9MlcqLWOVDqFLBeO11INxmnpirsJjCLg/LYkbUvxqc9WrBMuN6580ZDDEU4n9ro7XKoaJCujoxv3RQWtv3iN82sGKLpvwabZwdg3qnOc7WO1YdzCan46LWN1Av7sWY0Nbq6SYHjv4R/0G3MERK2zaOnrL2hmoSHiVwGCtNlTlsr4dvCM55LnM7dj31L5pAamZQb1/03HYscGAhGtUzCK9VoDVg+7I/2hqmvXE0aGWk42Dv+z333rmvVDsZQSfNXVXbTM2FQw7bix/sNzPz9O9CFFBxzy/XdGNhIjSeX/DdAQ4PO8McD+ucMZWNvR2iTG1VJX6Y548RG4SzLtXozg5TBFzRxsG9+JONExuC+CWYUXpqlKjaDEsvTZyLfx1beImouJsaTQwAUB0ZnAbeDWui71P2qwsXHPueXln2/9E19LLhPBxel2weOGdtI69v9I8MRId/VCoBcJ7vOkwrztmpMhSmiFpuhW/cmUtFRhA99E+rU78vbIU+lh8Kc7mBJpJVS7/lQQXrWJYmlEfk8D/PiNoQhxvcHoaI7Uk8PzCixHO/zOY9JPY9VgeZaalYfJfiWdWES+GIm5y9vdu+gvX4gVi20FlS38/wMImLNHuHErAOlkYnJ/KliDT4nbv2NKvOfD2LS/98VKiH9dtEksz8b6E6xC5Pvio4q8Z/jBEqzmY6uJ6ZF9CpMadmC3BTxnXY=
+    ZNUNY_ROOT_PASSWORD: AgC6YuVkyw0i80qHd4iX7nL/Nu4LjmcKH6Ye+q4r/BbC3UopT4mdWVIhJ+tA2webIG8WsDoxyQn+98sC3kn/O7JMrtz97m5fTQiypP4312B9SVx7kpmLeILfnpYeCbkQMQsl/F6mj5pPyMevr9mjICDTZ2WtyFWou4hFjtqOQdUmSilDqocNoXuKhDbydG+WLC9fan+5jGQTSGYDIBFf31sjIrud7DudIg0ThAwPIVmHO32nj0PkyCXEAdFetqD358N6csa04WSX4XcNsZx+UfxS+3sios4eCSAICJ1MjvrW1brXP0WLzNlXfX2fpLGC+hAx5ro7WVMrZjSaS6OkeMJKYN1Gt6dbm5KhfUXeAEwZKVzMP5TJAgYusWxN8gHcrGD2RFJWYInsgJT8KFPpRv7V8GPxusPr3m8b9HihTPnyKc9Lj1+V5RGCLeVvgs4m9e/ZLNy9+WVitevOYSirE2zWXq+W9KJ3x3GvwEve5mw6LQvuYderkhVdclI6XNCB7zc6+Tq1t2MWSDfkIyzB4Zb+MhbiKrCGaT+myYfz7BdSXPuKEXGX4TToSLY7pFFyoBZ/yXbV4Ff7Ops8CqoFaBzP9+qbrgeH9k+CO6aMW4kt57r4owj0FRgeew1vZY9v2tqOdyvoeln5NSa+0TyySW+m1E4yuGgmAgPcGAbArf50BLZi3wuiDEsrKqXAvCxtbZkdIpoDS4eWLsgPBCV/JHFt
+  template:
+    metadata:
+      name: znuny-db-secret
+      namespace: znuny
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: Ticket System
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Monitoring
+    gethomepage.dev/href: https://tickets.srbii.com
+    gethomepage.dev/icon: mdi-ticket-confirmation
+    gethomepage.dev/name: Znuny
+    gethomepage.dev/weight: "51"
+  name: znuny
+  namespace: znuny
+spec:
+  hostnames:
+  - tickets.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: znuny-app
+      port: 80
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: znuny
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+  podSelector: {}
+  policyTypes:
+  - Ingress

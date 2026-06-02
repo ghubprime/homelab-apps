@@ -1,0 +1,205 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+  name: it-tools
+---
+apiVersion: v1
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        listen [::]:8080;
+        server_name localhost;
+        root /usr/share/nginx/html;
+        index index.html;
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+kind: ConfigMap
+metadata:
+  name: it-tools-nginx-config-gfd58766m2
+  namespace: it-tools
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: it-tools
+  namespace: it-tools
+spec:
+  ports:
+  - name: proxy
+    port: 4180
+    targetPort: 4180
+  selector:
+    app: it-tools
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: it-tools
+  name: it-tools
+  namespace: it-tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: it-tools
+  template:
+    metadata:
+      labels:
+        app: it-tools
+    spec:
+      containers:
+      - env:
+        - name: PORT
+          value: "8080"
+        image: corentinth/it-tools:2024.5.13-a0bc346
+        imagePullPolicy: IfNotPresent
+        name: it-tools
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d/default.conf
+          name: nginx-config
+          subPath: default.conf
+        - mountPath: /var/cache/nginx
+          name: nginx-cache
+        - mountPath: /var/run
+          name: nginx-run
+      - args:
+        - --provider=oidc
+        - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+        - --upstream=http://127.0.0.1:8080
+        - --http-address=0.0.0.0:4180
+        - --email-domain=*
+        - --pass-user-headers=false
+        - --cookie-secure=true
+        - --cookie-name=_oauth2_ittools
+        - --cookie-domain=tools.srbii.com
+        - --redirect-url=https://tools.srbii.com/oauth2/callback
+        - --whitelist-domain=.srbii.com
+        - --skip-provider-button=true
+        - --session-cookie-minimal=true
+        envFrom:
+        - secretRef:
+            name: oauth2-proxy-secret
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        name: oauth2-proxy
+        ports:
+        - containerPort: 4180
+          name: proxy
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - configMap:
+          name: it-tools-nginx-config-gfd58766m2
+        name: nginx-config
+      - emptyDir: {}
+        name: nginx-cache
+      - emptyDir: {}
+        name: nginx-run
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: oauth2-proxy-secret
+  namespace: it-tools
+spec:
+  encryptedData:
+    OAUTH2_PROXY_CLIENT_ID: AgCmlQYbujb6hTYUx98xXp5/+QNXxxYCc1flLLJbrVFbO17fZdbRLeMDsWuS7L5k9DP4EhWN6i7OzoNHDj9ovp0SSIrqBCLxCJOhiHdf2Hw4pz8TTyZp7VCwZIjnLLtyNOzjts+My3mu8lsGlFE0/ANZtqF+nAtg5DpUH/b/I0Xj2wxEy+v2+2TcnvpVuN+LaZPm3ouNx63g+p3RjcJlNokxZITasLyQ8KnatfosCmej7ChPeMNidmV3+ZDV30WufoNEDQNFeDLnaXUW6oRGh6BbtnAh3/Pmj7Xebs3EE9xXeCBQ57sbj1UwbkfiqWx5MUa6XG8Gb2PjjOLEu+mEBYjlsu8Uld7WDsVHFzfJ4KJu9BTwEKnT3VriwDYispUONAlalYXWbofwucJVyLRY7wnlSKV/JHvZwHAT9H0O2IvM5aPiwT4yOooZbEcLSakBJ1MGJatUhzd5l1pwocsDorP7MX0rWglywKkKRZi3KDqf8IUkhAtMurI+efxtr7fbtfqsm8hPPYYejXBYtORrO5uWAVC0WAuLeAfY8p6cXkzhX9PRKbdGhB7ZeOaE4E+6NZ8QSWHbnauF6chnhAMKfgz4uZoHnqhmSDBK7cKVfsmtDHivAb1J30Ce3QM1hVba059zbKaHXnOEyVJ0g7xqQyAjTiHMFYdOM5e0hrOK0+MTECbc+mYD93Vyz1X9FngTyI6SrEk6w8/UjV6KRNeelE8=
+    OAUTH2_PROXY_CLIENT_SECRET: AgAW0zSThxh5bhnJQdE/dxzUjmoRpTbKNlp91b00vwDzV5s+vDLWETbqOPa8znkcjyGCJIxiguSmgrhMGXRsgH6U6KiwnSW+1DZJXjaGJkAPsvonaE1mBZnMZVkcBl9Z54EgMT+UWFCb0QWmp4TeQD976Nhk2cxwoOo/nztIZzu46QFxbXuwpHXWbCTTaT+ne5hBtbSQZwzmdQhPVKVEBXwiB3wfolXO88+GdqXSH30QSl5zNi7RScDVP8uReZJ8ZXVs/eF89AuuSD6rjT02nZ3XS7KRg7zDz4089skT94g5nYo8JGpow0I4buUTAaUdUZVybcmqgsOvpT/TuY674daQq7HsTD6Cdg3kQfne3lSJInpKi/PZgKLWvLMY9LMxj71PH5tviZ/PKT/WsHACuSCqmrdoMc6OcLUWVwyGLEvaKbZH6QkiCeXjlJ1l2xz7etiCwn2ZueDIlKRx5TVWxcgidSM0K6JmZ/lKcM5sUZGN4ojw2pOkRC01bvPHntVRPWh4WQg7uH66yVCp3f/uG4xkVSmLYbkV5XQgsYZuuesA1NHpMAs4gXHPknLsW9HqMaW99W8i+BpU3hT/CuwjKl0iQjqLjN+MqjKi50c9P6ws68Q8gnjHQ2KA2EvnS/AB2pKZ1kRrA68kETox+h4/8IQJol4EEPIuHAL16V7FqJWKdZYD/NBuETJf5XA00l0uyabWhhoN4Mfm2ap9wtoB43mDFnqHRqMGC07IIlghT/AEhw==
+    OAUTH2_PROXY_COOKIE_SECRET: AgC6u2rcRtHdvOQCKNTFqBWWibLghVbF0yW+Hk3hYUbk6WhJj75r56q2+uwCKig0IZUERRacgwZ3olNwJtvdRHdS9hMhfAhlDvEgsEWOhRVf1prhoPZ6Ws29yVjJzgP8aU8B5d+bYTOz21Ut9e9xzVHenKH1Xe9ylkULiMN+/KxondrjqgffsM5HsSM6SrvHSIDPhp4Ln0VzpWreBph6xRpVUhgPeU+WYNo8D8Ty253V3N5usSeEpy4WH4LB7ETcHT63xnvoblVBi8m/RRCGmSt2Vm/wPYEjKuCdnahJ+hy8yRq4AQZ3YwBfZ4Ny18hTaPZ9I3XoPLNxtIDZY3pjdSUCfRPe9dIZ5hsG46u3WrKhYxuBOxNxCHOQJSSWr9b2aCXrZMpNDnMgtEHWgDOlK8EEWuQFmHVgPpBMfAGxXrtA1ohZRxKUmBHT8+CyJQIGCOytA1SmI1w6ZXylJmgaN8Oe+QgdBE531gu+stc0/Zb879vXO0ZeUARNVj2uB6I171Ns10iqM1IfY+K+hY/q7lC/q3u6NtiXL+9K+gkVkc8+o20VTC4wcSsXMGK1rVBj3ZJTJk1RJuFk017rKy676fDslLdHsQDs2/lsEb4RMRV8SIciXR0pWEVYUYetNK6ozKtqjNbzg5b89MbomR41PhrmBZdQpL0k/iv7m/z7S+G2k8O68ATZWHvvHVeidG+H39xMWMqKBxVMNgih62FoUsVdfwenegWb6RvkCslcvqqENQ==
+  template:
+    metadata:
+      name: oauth2-proxy-secret
+      namespace: it-tools
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: Developer Utilities
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Tools
+    gethomepage.dev/href: https://tools.srbii.com
+    gethomepage.dev/icon: it-tools.png
+    gethomepage.dev/name: IT-Tools
+    gethomepage.dev/weight: "41"
+  name: it-tools
+  namespace: it-tools
+spec:
+  hostnames:
+  - tools.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: it-tools
+      port: 4180
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: it-tools
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+    - ipBlock:
+        cidr: 192.168.8.0/24
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: fdae::/16
+  podSelector: {}
+  policyTypes:
+  - Ingress

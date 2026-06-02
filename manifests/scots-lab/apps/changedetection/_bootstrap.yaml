@@ -1,0 +1,262 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+  name: changedetection
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: changedetection-app
+  name: changedetection-app
+  namespace: changedetection
+spec:
+  ports:
+  - name: http
+    port: 4180
+    protocol: TCP
+    targetPort: 4180
+  selector:
+    app: changedetection-app
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/instance: changedetection
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: changedetection-io
+    app.kubernetes.io/service: changedetection-changedetection-io
+    app.kubernetes.io/version: latest
+    helm.sh/chart: changedetection-io-0.12.0
+  name: changedetection-changedetection-io
+  namespace: changedetection
+spec:
+  ports:
+  - name: http
+    port: 5000
+    protocol: TCP
+    targetPort: http
+  selector:
+    app.kubernetes.io/instance: changedetection
+    app.kubernetes.io/name: changedetection-io
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    app.kubernetes.io/instance: changedetection
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: changedetection-io
+    app.kubernetes.io/version: latest
+    helm.sh/chart: changedetection-io-0.12.0
+  name: changedetection-changedetection-io-data
+  namespace: changedetection
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: ceph-block
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: changedetection
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: changedetection-io
+    app.kubernetes.io/version: latest
+    helm.sh/chart: changedetection-io-0.12.0
+  name: changedetection-changedetection-io
+  namespace: changedetection
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: changedetection
+      app.kubernetes.io/name: changedetection-io
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: changedetection-app
+        app.kubernetes.io/instance: changedetection
+        app.kubernetes.io/name: changedetection-io
+    spec:
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --provider=oidc
+        - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+        - --upstream=http://127.0.0.1:5000
+        - --http-address=0.0.0.0:4180
+        - --email-domain=*
+        - --pass-user-headers=false
+        - --cookie-secure=true
+        - --cookie-name=_oauth2_changes
+        - --cookie-domain=changes.srbii.com
+        - --redirect-url=https://changes.srbii.com/oauth2/callback
+        - --whitelist-domain=.srbii.com
+        - --skip-provider-button=true
+        - --session-cookie-minimal=true
+        envFrom:
+        - secretRef:
+            name: oauth2-proxy-secret
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        name: oauth2-proxy
+        ports:
+        - containerPort: 4180
+          name: proxy
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+      - env:
+        - name: BASE_URL
+          value: https://changes.srbii.com
+        - name: PLAYWRIGHT_DRIVER_URL
+          value: ws://localhost:3000/?stealth=1&--disable-web-security=true
+        - name: TZ
+          value: UTC
+        image: ghcr.io/dgtlmoon/changedetection.io:0.45.17
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          tcpSocket:
+            port: 5000
+          timeoutSeconds: 1
+        name: changedetection-changedetection-io
+        ports:
+        - containerPort: 5000
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          tcpSocket:
+            port: 5000
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 300m
+            memory: 512Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        startupProbe:
+          failureThreshold: 30
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          tcpSocket:
+            port: 5000
+          timeoutSeconds: 1
+        volumeMounts:
+        - mountPath: /datastore
+          name: data
+      - env:
+        - name: CONNECTION_TIMEOUT
+          value: "300000"
+        - name: DEFAULT_BLOCK_ADS
+          value: "true"
+        - name: DEFAULT_STEALTH
+          value: "true"
+        - name: ENABLE_DEBUGGER
+          value: "false"
+        - name: MAX_CONCURRENT_SESSIONS
+          value: "2"
+        image: browserless/chrome:latest@sha256:57d19e414d9fe4ae9d2ab12ba768c97f38d51246c5b31af55a009205c136012f
+        name: browserless
+        ports:
+        - containerPort: 3000
+          name: browserless
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: true
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: changedetection-changedetection-io-data
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: oauth2-proxy-secret
+  namespace: changedetection
+spec:
+  encryptedData:
+    OAUTH2_PROXY_CLIENT_ID: AgBNCRiBJDb8rUOt83atS9dFGtDMoxNW/OZXD6Sh19UYKwmp1sp/pH3RbtpHuscnnsTVdvU8gkIU2X4DRkEUHvjTlLPBy+TG/do+RsqoYnBZNqt8PcH/B3AnPRmu8P2l11dgVJG9EuZFs16YlwGvBcEx4lK6k19i2JCAXizUhWZgm6T+8o7ZBRUiC5bHuiDpIytSpRhPKkX8D6our+sfLaoAqFW+Au7Uyx1mui8FlA7iSoqRFE8LWcyEnzDW0AtyjhiWefBySAdT+zEpZWzuST7v9LF91k4rc1QiGuK+r7N4DnPbu+ETyrV2Ic4FK/GoBw0n7LZyu+ifubPePWfXSc6cSGTzpJxRsepHD9kBSoL/LayV+Nbxe3trznMYAnmdv1m4+k/jQvfseGlSjB6FlWiNySv6UY5JhKsUPDDeXSyouaORQplG1adhLCeP2Q8j4On+5Jua2lZ3EynartUvRkN2+DFKvt6ZuUyeyUkCqYdlqBakHt/9eVoWYLfh1YUxb/1xgk+gijGq/dCeq6WedBRo44OQ7BmpONYyzQO6tObM2yn9w1MOp/Bn3KamOGxBBBQyKiovsgp/CpZRSjxOfZ2eUxSf4HyWLKFOuDpg3AYrj3ty3j9/9dL4lNfqfNjUayoqTOxfpkAKje/feYpiNoCxOppGpLWgnfvrTXyjH1ceMcVJvRcVZEGr5NIzLwCN/jqdeTtj1Nx9KWCCksy2Ea8OpBshrOMk
+    OAUTH2_PROXY_CLIENT_SECRET: AgAnYoktDXhvl1lGEGKDmkjQqC7n1shLYAcDMWSjLnTNDUZTnsGRxChZgzubc8U96ERkkxJJrpdYuYUYnZAJq/7pelTTnf57dhysBzVXSOqAuDEiENt+IRZ2mHzKUtpW8xxTjCGIsLTPkDcVKSZSZ8ygWfxpA7QQUAKc5caUOOCVngmX2gX28S9t+n2pxwd5odsDnQL2duMOKpxGs7+q1hRieS4+6eqc6I1B44sF71QTaXupw9Cflr67FLbowOclRA0o/lgdLuvgJJI0JP7I51/sg1VNWQsG+w0NilBKTxc7SdaHYcrhP+/bVpUSTXMAoUtlF8euFYwx9e1JwK/sBnrbJX3Hy1C/e8QZXZysxBit3DK/cct/IEkvXXJHeyreM5FARS87KWMd4WTHNJyNQmTJGXhdlKERqsKp1G4rDWAyYgdmcXfkKvE+VjcZUQ+8HUNARM12ZqzOt7QZzddynRhqj25191kOb7oKfHBop8U6J8Vu4iEjT/oD6uV/jX+cGzGbneatWamWs/f1AdIvw9/EVfAaZgvNPy9I7Vx0gVZfozqtEfNW+ySbma1i8cvQeR9wc5nMU943uIuB3PSijUaVbQ8OK1NN++jIFCL2yO249KBbW+KPXdVLHfrFU+CnUkwBidXlbon+ihJZUwWs8vGhF3mSta89Mx6gL3wyg7avY0ANEdHmj8Fxq2MuQIsuqx5T9gfyy+PZWJsHJ11yBl0bxiML71vpc4izj8l2Q8Ay5A==
+    OAUTH2_PROXY_COOKIE_SECRET: AgC3qD7Il2AXE8wz15KNZSIf+ZPvNZy0fTx3zQtD9rs/pACJB0P/FbkNZJg8XVDuT3lYNq7UCCVqOkhcNAmWMwf6X3yc6/dPWTMDNANOW4/Uygw8pUFEOsIdTMZ2/9/LCDe7NKntcEidPrdgviIqkGghRvq9N2iIGvnmPPuhelIaZEdu6IpcNPvHj04ZgR1tZnjHMo+m5qfyv87Vt/IFQhQBCC72QQnLgo5TV4l7Un3dKchSLWHML7MP6mJsZci2wkNcuUliL7TPkaDeTvCoiffyztCY0csprHPvy5WXd7rn8Zvvtf5NKWAUFqRjMi+6OwWrX6I0WTiWpXLNE4EQ4lP6yny6vsKJG0pqFakgPAW3WQE2gmLK4oDXxSWyBao1pXUAgfCFcbqXJJY37lAkAVHAnCB8w2aNi/X7DSk2Q9AAAli1PMPQPG+ybyzATHLWKvghCb3lIPcnX37Zjf6zL9pI8p011VoaoJdaXQ6zSYS0+nX2r+E1b0HEqUsbMKOQ2kcGQWlFJN0ICs+GrJZRF67/DfkvgDm2OjaYam9AYOsvS6YHXfE+3SbqXwdKBqML/43VaTGkv3iHtv0b2wjeUMsNygsBdzz+J5FtRD9l0rSUakpxQzjaVlAuVnQtps/cXNtn+JgR5sdf6lu2UppKfVE04ZHlYmyrGMTwJB9lexT9Yn2hd9NVjyCh0owiEGcgfGkRKKlV+W0UvduHBQKo0OFuOPgFX6rzK67nmFtdddvQz5IqBdzE8r3uWG2b9Q==
+  template:
+    metadata:
+      name: oauth2-proxy-secret
+      namespace: changedetection
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: Web Change Monitor
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Monitoring
+    gethomepage.dev/href: https://changes.srbii.com
+    gethomepage.dev/icon: changedetection-io.png
+    gethomepage.dev/name: Changedetection
+    gethomepage.dev/weight: "50"
+  name: changedetection
+  namespace: changedetection
+spec:
+  hostnames:
+  - changes.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: changedetection-app
+      port: 4180
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: changedetection
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+  podSelector: {}
+  policyTypes:
+  - Ingress

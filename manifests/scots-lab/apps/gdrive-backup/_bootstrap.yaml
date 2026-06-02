@@ -1,0 +1,191 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+  name: gdrive-backup
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app.kubernetes.io/component: r2-mirror
+    app.kubernetes.io/name: gdrive-backup
+  name: gdrive-r2-mirror
+  namespace: gdrive-backup
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 7200
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: r2-mirror
+            app.kubernetes.io/name: gdrive-backup
+        spec:
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - |
+              echo "=== GDrive R2 Mirror: $(date -Iseconds) ==="
+              echo "Copying R2 bucket to Google Drive..."
+
+              rclone copy \
+                R2:homelab-velero-backups \
+                GDrive:velero-mirror \
+                --config /config/rclone.conf \
+                --transfers 4 \
+                --checkers 8 \
+                --log-level INFO \
+                --stats 60s \
+                --stats-one-line
+
+              EXIT_CODE=$?
+              if [ $EXIT_CODE -eq 0 ]; then
+                echo "=== Mirror sync completed successfully ==="
+                # Ping healthcheck on success (uncomment when configured)
+                # curl -fsS -m 10 --retry 5 https://ping.srbii.com/api/v1/ping/<UUID> > /dev/null
+              else
+                echo "=== Mirror sync FAILED with exit code $EXIT_CODE ==="
+                # Ping healthcheck failure endpoint (uncomment when configured)
+                # curl -fsS -m 10 --retry 5 https://ping.srbii.com/api/v1/ping/<UUID>/fail > /dev/null
+                exit $EXIT_CODE
+              fi
+            command:
+            - /bin/sh
+            - -c
+            image: rclone/rclone:1.69
+            name: rclone
+            resources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+            - mountPath: /config
+              name: rclone-config
+              readOnly: true
+          restartPolicy: OnFailure
+          volumes:
+          - name: rclone-config
+            secret:
+              secretName: rclone-config
+  schedule: 0 3 * * *
+  successfulJobsHistoryLimit: 3
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app.kubernetes.io/component: retention-cleanup
+    app.kubernetes.io/name: gdrive-backup
+  name: gdrive-retention-cleanup
+  namespace: gdrive-backup
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 3600
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: retention-cleanup
+            app.kubernetes.io/name: gdrive-backup
+        spec:
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - |
+              echo "=== GDrive Retention Cleanup: $(date -Iseconds) ==="
+
+              echo "--- Pruning velero-mirror (>365 days) ---"
+              rclone delete \
+                GDrive:velero-mirror \
+                --config /config/rclone.conf \
+                --min-age 365d \
+                --log-level INFO \
+                --stats-one-line \
+                --rmdirs
+              echo "Velero mirror pruning complete."
+
+              echo "--- Pruning pvc-snapshots (>180 days) ---"
+              rclone delete \
+                GDrive:pvc-snapshots \
+                --config /config/rclone.conf \
+                --min-age 180d \
+                --log-level INFO \
+                --stats-one-line \
+                --rmdirs
+              echo "PVC snapshots pruning complete."
+
+              echo "--- Drive usage summary ---"
+              rclone size GDrive:velero-mirror --config /config/rclone.conf --json 2>/dev/null | \
+                (cat; echo) | head -1
+              rclone size GDrive:pvc-snapshots --config /config/rclone.conf --json 2>/dev/null | \
+                (cat; echo) | head -1
+
+              echo "=== Retention cleanup complete ==="
+            command:
+            - /bin/sh
+            - -c
+            image: rclone/rclone:1.69
+            name: rclone
+            resources:
+              limits:
+                cpu: 250m
+                memory: 256Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+            - mountPath: /config
+              name: rclone-config
+              readOnly: true
+          restartPolicy: OnFailure
+          volumes:
+          - name: rclone-config
+            secret:
+              secretName: rclone-config
+  schedule: 0 4 1 * *
+  successfulJobsHistoryLimit: 3
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: rclone-config
+  namespace: gdrive-backup
+spec:
+  encryptedData:
+    rclone.conf: AgCCqLINiZjQq5eyso4HLF9/mxeL3YQhDSbsAh/To6llsjqKBkEHJFMSMfR9eGPM5y3IUf9cTQ2rmDAv+2jxaxTqIE5gIJru+L6kPJTOT1J9FjRuOenDNgxiB4Wk8tT48Vz10aumHlpVsaA9Dy9mN1OEoJ9eRhqsIwAOxAmNbruuU/jryZ8nD22N20DSBBUcocxWrkiJlkknc0ENuAyWSIycssyc7P8sFoR+hpJZMFfy43Cit+msSWlHbWJ5kKRxr9baeXaNC4SPQ9XcllGv4YonmN8oIizWcLYP+8udzMl9rWH/hHgNqKpWy8JeCl61Ve6hbfhpr1qxzLxQX/EhbCzxUxx6rI+j4/5me9Gl4nUniTwjM9tuf9tPaeNiMsXUTDbboUaasdTKjb/zTEcnA9Sh3wSe4yO5WQ+4eez3YTzqVWjals8qMm+7d6Xyq9OQxwpdzPbuuaAjsQjafXg5qlKMPcEzoGR64YrmiQ2MgTs4EZ7JnaDIZulLmi1UGEiZCoXBj3teNiYS+5SBjAsdHLH+6QH4g5drutORf2Bu9m3XsnWKPrY8+wAzIZ8udeAxxjWUyJBSRjS5A5AbYEyOkEwy8pDmbpqsFdr51br0L60P3i3lRRmw5xs3x55MbfOvcGMD8vEq3vdjoL03GmkbWMqkjz+JPqVjmbSlf9WKpT//3+BCkc7ecS2LS/CVQDV0LENyBZOkEa9gHjZnDsa6WPxU/NaB4oX+ddVZP75OZ+yzS+pY8rigmR4JKpckVFF1zyEwScerz8/v/c6lwZdnYarcpmScJGUt34hqQ5FSMBplRj3bLD5UgbSzl/Yht9bYhEtOk0wRWNp3KBHF5ljO0sVyRR+6xhRtqNEXWl8+otl11X33zowLw996mKJyBiIyVOs8uaDJ/BaZCeEZ0GxIT0QNk9DDAmieV75HPy5hhJRNOKRTy1p85Afv/qRIimyhocFxwuGCLSm4506ZV64rHQx7Xyk41l/TiJTKOZ4AoyEjCNPHS/5/Agfj9Pyn0LC0KsgHcnx5D+WTqdnfHB1yc6QhJodmo/mf2892R/akduzKGO6lT1M1by5/Am0niDcKIzsxtIU39/sGAaiGdf4bDlAzefrjNQpTB8N7YNdBHwhjL4/kiaUidy3U5qtqMX5YOrKXDlj4saw7m0CK0tYtLGxDyCRGMuepXOWeosvw/lGxrVsJJntwD3XClwddrxiWxsUciSiomFy/t3pEw4+uYiiD8vHKvr07sfY9Kr/c2BXM4AQZ4w5zziUFBkeuJ85wnmZwcZFjxPKTJUgqRV7/TE5JyBw6ISg6PCf2cWSmo3vs5Rhsbt0B4zc54y2J5kpZ2hceqV7SLDHJZd8+ixJJJF8CQxARcVNf1PWBV5UnN+QPktjuhxFwaoJ5F+rjKkcKJR99/v99dFISJVUJ1cx5B8isYJyg7e7T6qNHyKTD+rkrU4gz7R5RqMXWT07eaz/wklg+cRux+46DalhW33JmPFRkl9cTCW0hOKNZJJR2VpkNxa0+Cs1j5SxC6HFRVnUhIm250n53QYYz0ftXXntJab98ot6UuexqRLa8oGeOYBN9RIcKxmHDlgQjzYeWQmpawsVr3TAXeHtobE7C1JTHuWkbjNEKzoB/WwWuxQgFMCtZXfXIO5GQwJruzG4Fk+CSxa2eiL//u30blFhjWxyMpQn/AquOWG/P+bFSwTwybFEd9f2Ncd5bws+pUu90eFlmK6djvoUgciCCg0WCtUhpdbHKj1Lmu2RRak1ZMssnmvvDZ0RBDx/+OsYzhxUyswmT6AYy0Ne46F/41Q8VX6wtDtK9gQYOa0kXs4oDPdYA7qOMBlG2FqOMDAiNOdzJsVY+K4u6Onkimbdsd3UBdcRfAWvM0Y3z9l2t1RDPe0WQxOteAKHYcMaEDIOZHM1Ydg60L1ihWpUtiqeuQq1iAGto7hywQ7NKOKp0d4Vxk1fUDVl1Q84pN3EOPgcAQfbu2jhe8oG9
+  template:
+    metadata:
+      name: rclone-config
+      namespace: gdrive-backup

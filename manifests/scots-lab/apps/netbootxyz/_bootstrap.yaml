@@ -1,0 +1,279 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    name: netbootxyz
+    pod-security.kubernetes.io/enforce: privileged
+  name: netbootxyz
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    omni-kube-service-exposer.sidero.dev/label: Netboot.xyz
+    omni-kube-service-exposer.sidero.dev/prefix: netboot
+  name: netbootxyz
+  namespace: netbootxyz
+spec:
+  ports:
+  - name: webui
+    port: 3000
+    protocol: TCP
+    targetPort: 3000
+  - name: assets
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app.kubernetes.io/name: netbootxyz
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: netbootxyz-web
+  namespace: netbootxyz
+spec:
+  ports:
+  - name: proxy
+    port: 4180
+    targetPort: 4180
+  selector:
+    app.kubernetes.io/name: netbootxyz
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: netbootxyz-assets
+  namespace: netbootxyz
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: ceph-block
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: netbootxyz-config
+  namespace: netbootxyz
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: ceph-block
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: netbootxyz
+  name: netbootxyz
+  namespace: netbootxyz
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: netbootxyz
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        k8s.v1.cni.cncf.io/networks: netbootxyz-macvlan
+      labels:
+        app.kubernetes.io/name: netbootxyz
+    spec:
+      containers:
+      - env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: America/Los_Angeles
+        image: linuxserver/netbootxyz:0.7.6
+        imagePullPolicy: IfNotPresent
+        name: netbootxyz
+        ports:
+        - containerPort: 3000
+          name: webui
+          protocol: TCP
+        - containerPort: 69
+          name: tftp
+          protocol: UDP
+        - containerPort: 67
+          name: dhcp
+          protocol: UDP
+        - containerPort: 8080
+          name: assets
+          protocol: TCP
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_BIND_SERVICE
+            - NET_BROADCAST
+            - NET_RAW
+          runAsNonRoot: false
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /config
+          name: config
+        - mountPath: /assets
+          name: assets
+      - args:
+        - --provider=oidc
+        - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+        - --upstream=http://127.0.0.1:3000
+        - --http-address=0.0.0.0:4180
+        - --email-domain=*
+        - --pass-user-headers=false
+        - --cookie-secure=true
+        - --cookie-name=_oauth2_boot
+        - --cookie-domain=boot.srbii.com
+        - --redirect-url=https://boot.srbii.com/oauth2/callback
+        - --whitelist-domain=.srbii.com
+        - --skip-provider-button=true
+        - --session-cookie-minimal=true
+        envFrom:
+        - secretRef:
+            name: oauth2-proxy-secret
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        name: oauth2-proxy
+        ports:
+        - containerPort: 4180
+          name: proxy
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: netbootxyz-config
+      - name: assets
+        persistentVolumeClaim:
+          claimName: netbootxyz-assets
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: oauth2-proxy-secret
+  namespace: netbootxyz
+spec:
+  encryptedData:
+    OAUTH2_PROXY_CLIENT_ID: AgB6aVU5dvFnhDzI33O2m/5ViM5VZF5QKE4BWydbfnojJutmj/xPU0vWIsG4wQnlaZakHwY6k6PSWAI6qA7HtfhQ/obIX5MpZzU/FZVL+GnEGZHHVDZ9XvDUwcXGA0wd71W+qYflYblsBQYVz+gOyJEsKCIGMpVYydVTKwyjPKhMCvsBVHhDUxYvSfQqO/tpxrquTD+++p9Wg9LSc2gv4f4Jan2VUSBrjf6qYza+xoPpVoV7SVk8CDHgSaFYxy45Phax6LGR2O2Q2MY4KP5cASA3LSLLQjoUjVyhpTBntsyDhsGS7Iw8/2BjsTH2HkyjIRUll6EF/5+nzKzPZ+SlCZ04GdMV8i9heW1ssk6hWCtdidygFPMbiISWGauYPjtZogIZWW1xbUJOnfdqtsbIRIWWvmD1mR7eAmVJg/c+MdCKbcQtyXEz5nDOudprO6s2Owt49e9y9lTJb+PnP6PYly1uEk6rbFMh0rY2KvD8c0lfnh3Zfe0/nTaVWYKAo8DJZwJMV5nFIbLWruds6veNoCOOP9j0vfvPQ5pOUU6RBoJ6yGVHZ1oAiVNOsZPrV/iTxxkfdd7OoJRP5fNL+GySqfPvAC/E/Cd05r+vKOPHNlyoqBX9p3SrblTRhf0PJ+qTW6nMn60Mfza9QO9e9imsYtL7IquH4mVCD4JaeIP3Wh0qI48bMf1E7VidGLN1aqUE9mtlG6lubccpyXGhC/yBeZfbgg==
+    OAUTH2_PROXY_CLIENT_SECRET: AgAT1MGewghaeYqt0FBnvcTzGHnnSZxPm4DecX/HkIuvQ0DkzvQxSJGzZzbu1rmEe3bZNWcoLnWJvaaBC0YMnRtW19KfYFNqKiGDnvrQqmAblUwzaJjIx9qwufQ+PVXJzaRBemUgx80vhtGxj7lD+P+iZHSwaKob6WQ+/JcNS71JraOZN5KnqlM2AhFzmnz7hyI06f5UYFvQnwxrtOG+OfIjPOGpB1euX1/+1Gr31kLvFL+DPQpKoGWca9NgWaLixPjebO6AX2EqURBgKZEUigmzXXvd2H7C9zedoZYV5a7VCoS/cNTT3DkfbWmsxC6OgOkJnbBV2OVX/+uNCi4r4N/XE0ZtZXlGl9ySsjZpQFpPxEpxZQEu/Wj6H7MF7wvYQub/T4YmMC5pGHDNLOgG+F6NINYcFcTs7k3c+Gax3LAF3c47ksA7fPIOYKW4XD9RMRorW8FGcxuYLi1Yio/uC8hjFRsGQaN+g+dD3/agqSbhgoN7cSpZjA5QhcoZD0tStoo/Q6Dj4XCNSwSAVVNHwDzIXY1kpzXdINU0g7ievCpnnMl1Gm7sx7IjGwL2HbDRlZSHaE4kR9Igei8Z3xyZ4iaNlXNg2Lj/8hs3jFInVDM4LEbjfswWswT0Evwl/SwnUSAllyB6ozo6QCDRUCfhM+KqBQRBMEsyx/ECNisCcZWzN8JABqyLu8K6A+svTzUFHyNvB9L+TJMUQJoqTX5FZcmXJMBD+RQeM3ElmOYi8xfx4g==
+    OAUTH2_PROXY_COOKIE_SECRET: AgBX+IaNpnfyoqNJDn1aDll9k0ewLqCiJ5dHsujd6l+aKfTcDW6v5T/mSz7WK5g5T6lnfD8BCOKHv9I30IWXmcnGnWv8yxTSk2rVBuCnSf514RjCkqofSK3MgjawznJECy9XS/zYQi2N6pPPJ97/DYHjip5l2Zl+7KRxcP2CVm7fB03+VuHqRHRCnzHIzKf1ACUVD/OBLdt2ltyZfbHkbMjWPnetYoKfDkHJwjZnOw4C+uIP/3ALszAZK1vafqTlWJfNT9HrJ/miU7KGuvhqiZHcwTmFqb0Answoh2iMybey8uJdcNA9sg6MWYRTHMhFrc/u6ghTkbbfznoMJ2SC1q/KwGNQe62q9iaraJkqahqcF4dYe1eITeQbG5ctWwKtP9jmX96WqrNs/IT+Li4ASxDOOY4FjQCa+Ukukms7gMWg7k+vLjixlPlc2s64UEp6nBl8LeEigq84t9vPEEw2POdewCr9NwGOj5q3/veq5lG0OKWPstyKwyGJtw97a+onp79fs/Ad/ARW/ip/xisD+wuNTbqEytTF0mFYc8vHnOoAJRJrnXGyBVepAHqYHMPON15buE4ozmtovYDOJg1tTUtiXOndabpVnt5sHvjSlBqf0AVtb2jdeQrX6Xil7fbKgXLfP8/CFcRjDz51B+abGoylBHaSq2AzuuKV/qdE8NCWlazyevbB3DD0X+JJvMfKtwZcn3KH1i83jfAewRPjMgy0pPOnMHXYgURiWama9uRopQ==
+  template:
+    metadata:
+      name: oauth2-proxy-secret
+      namespace: netbootxyz
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: Network Boot Manager
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Tools
+    gethomepage.dev/href: https://boot.srbii.com
+    gethomepage.dev/icon: mdi-lan-connect
+    gethomepage.dev/name: Netboot.xyz
+    gethomepage.dev/weight: "46"
+  name: netbootxyz
+  namespace: netbootxyz
+spec:
+  hostnames:
+  - boot.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: netbootxyz-web
+      port: 4180
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: netbootxyz-pxe
+  namespace: netbootxyz
+spec:
+  hostnames:
+  - pxe.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: netbootxyz
+      port: 8080
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: netbootxyz-macvlan
+  namespace: netbootxyz
+spec:
+  config: |-
+    {
+      "cniVersion": "0.3.1",
+      "type": "macvlan",
+      "master": "enp1s0",
+      "mode": "bridge",
+      "ipam": {
+        "type": "host-local",
+        "subnet": "192.168.8.0/24",
+        "rangeStart": "192.168.8.250",
+        "rangeEnd": "192.168.8.250",
+        "gateway": "192.168.8.1"
+      }
+    }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: netbootxyz
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    - ipBlock:
+        cidr: 192.168.8.0/24
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: fdae::/16
+  podSelector: {}
+  policyTypes:
+  - Ingress

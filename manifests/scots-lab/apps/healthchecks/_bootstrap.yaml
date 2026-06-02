@@ -1,0 +1,179 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+  name: healthchecks
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: healthchecks
+  namespace: healthchecks
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: proxy
+  selector:
+    app: healthchecks
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: healthchecks-data
+  namespace: healthchecks
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: healthchecks
+  name: healthchecks
+  namespace: healthchecks
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: healthchecks
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: healthchecks
+    spec:
+      containers:
+      - env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: Etc/UTC
+        - name: SITE_ROOT
+          value: https://ping.srbii.com
+        - name: SITE_NAME
+          value: Scots Lab Healthchecks
+        - name: REMOTE_USER_HEADER
+          value: HTTP_X_FORWARDED_USER
+        image: lscr.io/linuxserver/healthchecks@sha256:9c41e787577d7812f7b75d4bbf53a19697403ce7759c108dc772b85cd4531b58
+        imagePullPolicy: IfNotPresent
+        name: healthchecks
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 128Mi
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /config
+          name: data
+      - args:
+        - --provider=oidc
+        - --provider-display-name=Keycloak
+        - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+        - --email-domain=*
+        - --upstream=http://127.0.0.1:8000
+        - --http-address=0.0.0.0:4180
+        - --skip-auth-route=^/ping/.*
+        - --pass-user-headers=false
+        - --session-cookie-minimal=true
+        - --cookie-domain=ping.srbii.com
+        envFrom:
+        - secretRef:
+            name: healthchecks-oauth2-proxy-secret
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        name: oauth2-proxy
+        ports:
+        - containerPort: 4180
+          name: proxy
+      priorityClassName: homelab-data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: healthchecks-data
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: healthchecks-oauth2-proxy-secret
+  namespace: healthchecks
+spec:
+  encryptedData:
+    OAUTH2_PROXY_CLIENT_ID: AgAVaz1ASj2mQxoElC1zpqK6bUof7vY4awpSC38jnpmBIgNxegs1Z7bwA1Bg5YN48WriyXXW+nF6ROlbu3Xkh+TUPoMm9MJFVV+G65Z3SLTXGQNeZaB+ThyTprQ5xmhkCEAWcD7HgMUUO3ialXYnn8er4/Y9MqYF0fGZEu2wzPJ8IPQ5/AeaIyfespiO6I5xF1hLgGEcAgOhpsf5YUaNhj3JGmEwPIONB9V0qnjgPfjKF+yfP/XirQv5ozKOkW3zAGrm6ekQQu7a9bpSKs5ojPjQ+XplAsdUTgxgWUVH7/7PMKd55bF/KOjDl85EgeBQmjuZoUOCrfUt81K+NXeDqiYSAIP0KaX3SwPvZwcuhcgXkc/T0UUGOgz7gZ+hZzxDCD5PxPrxrfA5J9O5tRlfwWVTakP2+lIVFu3hQrnFNBE2eueEhIx2vg2HDmN6GhR/PkbM6bU4RY3bVgpQcsFBegpfzdnKEaehb7Gn7czBKJDUR01HwTuHWVNaOd1D17XRTtED8A4Zf4BjGGsp/iC4LN6wStaxq3K2Q+luBDn9ORJAe0mp7ZAtLoP4d5RgVOWjY3EyKiKNtQ51ehZ4bQyTytXusVVZi4a5CUjagzz31408rgeV8kuaRGH4mD1xo6LZeFhS4bsZxU0FE0jC77hh7qoFo9hg6cpx8W/S8HRArGEsQq3nJfeP3qKAwcdfpHR086LAoEYZYhbycMiH5XpjIr5kgUun
+    OAUTH2_PROXY_CLIENT_SECRET: AgBEAOMP2UGyE7dkdlkyvbINjO3viyhoqHevgX7cyWbxOvbieMp29x6Qgs6fdPYYjk+AbV7a7ro3eLMlytdDXkRBLW938XOXHjE7nGJgTQIEBm7yOgjHDXqKRtNe+hipgXWYtGQBC8yXE9WTYGEfM0Aduc8BTw7Y0VgcAE2kp/9H1lizA4rXN9JGjJJaceVyJOBRYEv+Tgpgqsc3zQDxf+AMTh5uSHuUPwNO4HKG4iHiIbX0ww44iAUhvPvrxeB5jz6PgqCAnD7We8Yq5GZI8DreDfhO+zDLnW97XmL0relMYbhGaisy3LIE8wyg4PXZO/zJgCATrKlWjjJ8NtAjnKBHNSA5EFJ17HY1D+V4Gu3vk5UPmes1doNH9VR9asABOzhwneHmQX7W4913K5/eZkLqRyvOnZH38JfwFOu/v0tpML4qiyXZLI4zFK8kYHMfRCtukf4ZA3I7AYxdq1qNVuUSpye5Fs1wSwPhC7r7rMVkH7VBBjjNYHAfLfWylgGq/JZmdZozpUQA+n6nbsHyv9gjBobU9eTRVJfFawBOKmniZtadFIFZeSyKzAgHkoQ/ZvRAf3kcsjDtfBnpVad98DDHq4Z4VJCKwvBzLZi/mMmVzhnE9NLK6e89bDRPidBYeVV54KDjaQeuTQPfRhyA4CA70VivuSrGhqWeONk0JqvuHeQ3oCWd+hQJzqZSBeD5L84OJeCJ1zi0jIuO8fKeCdrm7yTlyyqZgmHjramcs5C1cQ==
+    OAUTH2_PROXY_COOKIE_SECRET: AgBx5Zbw2E39cBMv8HI/8dsqxJw0B/qxZ29plwZRhsU8qTpB85iL5KNiKgc95gFfzbEwCdY5Q3XFP+W+erFnT7Udr4Q7nAjSKAdK6QbMv9Z6GXErASIwV4qmgtmvZm4zYv4omMeSh9IeQyb2BAgAId+NkNydGsqNLCWdWWwzB2UUajTFbGsbW7dEkRS6X1AoMDzSnEpWZIyPeaC5MJrq+fbt3Qugwb8xZINTTwpZZUSm92ShTpXxfNQ/doaNzgWFpVAL4yXFPfHYDVac6yilKB8YJpx9++Nrghe8+73Uzz7ZGlToco5I2Zau3k8fb257o3mK7H2z6ofrAKHH+kZ1pbmJIU+CdGRX1QZnr1aiKOJxAe1JsKFr3aBX9oeN2fSNv29/PhOORT4SW6ZzM3CjWO2qsDepQSIfBzSM6suYkSOGsj3ZIDwPV4I84DzqFeudlv45e1ejQdiQF1KKhEmjfXyO2FjQJcGS8yw87BEKZQX2XZPm4JXf8F2/kdJOjTpFQpLvE3LlcuMfJMVeqEQbtojK8fMQTowtaPWcRubW+yAWxtMg3pxw1Yp9bzMGQ2dXH8KbAhDQusW7ZCAeKQ7c1nQ9Aqjr9gWUDxD7KbEYhBYNf8QwaLjUe6Ior1aKpURoD29cRQuhFW+IzYuZsiZaHKvfNq7REYZAXVY3Z7dx5V7w5yj7zRCl8C6fzzBnQU83xAL77AiOVLGrUYSP8/dZ6okl4IOqP//RMHuokCMPGjBbvw==
+  template:
+    metadata:
+      name: healthchecks-oauth2-proxy-secret
+      namespace: healthchecks
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: Cron Monitoring
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Monitoring
+    gethomepage.dev/href: https://ping.srbii.com
+    gethomepage.dev/icon: healthchecks.png
+    gethomepage.dev/name: Healthchecks
+    gethomepage.dev/weight: "53"
+  name: healthchecks
+  namespace: healthchecks
+spec:
+  hostnames:
+  - ping.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: healthchecks
+      port: 80
+    filters:
+    - requestHeaderModifier:
+        set:
+        - name: X-Forwarded-Proto
+          value: https
+      type: RequestHeaderModifier
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: healthchecks
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+  podSelector: {}
+  policyTypes:
+  - Ingress

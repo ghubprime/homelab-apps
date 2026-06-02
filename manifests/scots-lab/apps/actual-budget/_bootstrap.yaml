@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+  name: actual-budget
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actual-budget
+  namespace: actual-budget
+spec:
+  ports:
+  - name: http
+    port: 5006
+    targetPort: 5006
+  selector:
+    app: actual-budget
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: actual-budget-data
+  namespace: actual-budget
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: ceph-block
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: actual-budget
+  name: actual-budget
+  namespace: actual-budget
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: actual-budget
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: actual-budget
+    spec:
+      containers:
+      - env:
+        - name: ACTUAL_OPENID_DISCOVERY_URL
+          value: https://auth.srbii.com/realms/homelab/.well-known/openid-configuration
+        - name: ACTUAL_OPENID_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              key: OAUTH2_PROXY_CLIENT_ID
+              name: oauth2-proxy-secret
+        - name: ACTUAL_OPENID_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: OAUTH2_PROXY_CLIENT_SECRET
+              name: oauth2-proxy-secret
+        - name: ACTUAL_OPENID_SERVER_HOSTNAME
+          value: https://budget.srbii.com
+        - name: ACTUAL_LOGIN_METHOD
+          value: openid
+        - name: ACTUAL_USER_CREATION_MODE
+          value: login
+        image: actualbudget/actual-server:26.5.0
+        imagePullPolicy: IfNotPresent
+        name: actual-budget
+        ports:
+        - containerPort: 5006
+          name: http
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      priorityClassName: homelab-data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: actual-budget-data
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: oauth2-proxy-secret
+  namespace: actual-budget
+spec:
+  encryptedData:
+    OAUTH2_PROXY_CLIENT_ID: AgBQmhoiczFKT3VyxmtTzV3wr3hL/ut7GSbhDEaEdzWF2gutPbCphoX0JjjNtYrpISfXWefY+KdF88p+fPex4feu5dNJCt6Pg2nlupRGYmRa89HmtOtG/0OWe9d0bUVp4x2qiz0TlMq9bzmdKEYyIOu7vlu79al9DPILYDazYXxesZoTFBj7rUWbiKsUjpm/2poHESk3XWapxoOAXpkXjBREmx9JePhqLC+vnH7ph/+qAZf9RbpvMFyDZUBSbywXuHZOO1GZijse53srP48F0GjeZXnBVPcgZtN0dWSkruQUVJk4XZtUHbIxkuMBoav8dP3Yn+yiBZtwzkFcZAwffr0Zb8K5wytFIepTCUDXCL0JqGZpx1we0u7TafoS0n9mEbnLVvVi00+DFWjmDsUOET7L5Zc8T1GG6h0OgZZ6cYVGyKU9gfAwZojPKLo5PZm37ESEY0vHVjFbPjtPq974obi1+v6clh/yXjy9ej+nx6FUEmDT8QocQ6VUvOGGuVFo+ouNtOHXYGetk8mvHfTlkKwGNDE0vuMm2ndZSmsAlNomJ34eG+AdDq+pYUq++ymsobJ+fOsf5lR9brCeCL5o1ku2gNRtnWERtjwj1bMfCafL7WgmvCUyiIRXB+vtUVcC7iVKsx3o/FPZqfQVFXLcaDP0i79rPzypSHffOo9ZRltxd2+UetMszIqlo5cR8B9dVDKK9X7pyrsGVHQaCW8yTbrCVYIE+Q==
+    OAUTH2_PROXY_CLIENT_SECRET: AgCf5Bm1K9MvjKYJIEErKIkooK95KIZMDs7cxk7uNEw4FvB+TVDsgGx4HupCRQt01+Mmy7eD/GTG9ldV/cFpsoXn28+e9kMQh4ADgAWvLjCtIgtBMilk2+0UyDTmB3MqIoWNkY7OELTnqzQ/Efe3ED3xDllVByyAhGjwdp5NeYxIpAgv6FBly0cMyVp1S+W5h8LORtml3NmWKq22Ktck7XCBZVi2JpMQpuaF6gzy4RL+CN4NjHMw1hEzYWJvefDC50f+fXPaNBCtZmBrAbMFmtEkKQ5H95KYWLxXL2vHs6tInZGtGSGtGBFhqbktKAyKOkBPQyPPy1jg2tRnqwJNUr51S+OiPzTntVf2SusEHxOanfTYIM5Ra4kNUrDMDv1BaZ+zz0owT3On+Iwp2n5Jl9kiefv/1c4QtEU/yzszjZNlEOU0/YnMQWqq6Xa/CR3Sfqi+J9WmwNY0K7riIbdurfTjhj66V8sejvugoEL+NMuuF8XS6JEzuEgLojPWbPuveNNWh8/LJ6miUdp2bzANDYUlalrk9lmvyEba+rWDvygXwe5NUGU0gSIubxIeZ7eMZji7HCBPX/3ixXnDnE2iIzaTXN4cX3U4U4+iHPIa3PfniiV4sPCrlY2A/FnRWCER1CERpeLRlYCcF0GW3UTvkz5LCmGV3jIaA1s2sbD9y16XLclsDwnSIgoeMtByQYoJrcquZm3zoM/p5uA8O4xsok0iX0jvo7FWn8aEOuHIa/+0RQ==
+    OAUTH2_PROXY_COOKIE_SECRET: AgCZemEIpE8f46Lz/Qbqj4pe2aLmX8/bH9Rimss3AM5yu83FAtc2O24P3zv+ZwrBEKJGa9gAe6RKBSeO6P3eOJ3Mhfw+UbhIpUoi1tuiQibp4/fEnyBqoVOdZVVeSpDdwF0VdDTzjJ0uveMlWHGKFYsI7BM5H0OV5FHN+MIGz7Sl1OBt/fg2gWlS0OJiAj0tlS0+hVbyrOd5XfduymRXg+rCBliVLw6SAaCtz9lYaLBgaHw6cxlUs0Dp8WaSUshV5QjxgqHEHANxKnLVDl0/fOU8HhBc7iOgsRm3RZiQ5PHp/VTOHlxXUY3EwZDtJAyBPkuwzrwIdRcS5bc5m0hCwNB6pExwDWokoeNL5oIXXcxv3Qnxh9u/K/9fHvUzW9z8FfGUnoNt4p/abNN4MTIBcLkKZ72tLBAiWSAz4s3UrqDLBiqKXVV2QsJCRptZpwNacD3Uv1faxwHdcy5pS5W32i34/Atw76M201p0ng0gW+1PBq7WqqOqMcm4KVlIId2w4qcMzg/qayFZ6F7TK2lhgDdDpkTcB5wbOBvZ9gNQyZtXwcgG8aqQUrvW5sdTDrtUUKuG2z9fskazPj1e1oLgSdSyjef1+47D5NL8mNB9GTBPF4e9K9k1ZRBicH7uu+qhMl18vnFmxqcdwCWxPcnpjSqjNo6CTU553lX38sFmjMVyQaeaPlEd2eGat9y30FSBGeezpK2yitE8W0gpBPaBkdsmZmwIwevGMz3nBzjfUT8+Hw==
+  template:
+    metadata:
+      name: oauth2-proxy-secret
+      namespace: actual-budget
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: Personal Finance
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Applications
+    gethomepage.dev/href: https://budget.srbii.com
+    gethomepage.dev/icon: actual-budget.png
+    gethomepage.dev/name: Actual Budget
+    gethomepage.dev/weight: "25"
+  name: actual-budget
+  namespace: actual-budget
+spec:
+  hostnames:
+  - budget.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: actual-budget
+      port: 5006
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: actual-budget
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+    - ipBlock:
+        cidr: 192.168.8.0/24
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: fdae::/16
+  podSelector: {}
+  policyTypes:
+  - Ingress

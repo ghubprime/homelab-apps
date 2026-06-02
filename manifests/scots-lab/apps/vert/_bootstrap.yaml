@@ -1,0 +1,178 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+  name: vert
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vert
+  namespace: vert
+spec:
+  ports:
+  - name: proxy
+    port: 4180
+    targetPort: 4180
+  selector:
+    app: vert
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: vert
+  name: vert
+  namespace: vert
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vert
+  template:
+    metadata:
+      labels:
+        app: vert
+    spec:
+      containers:
+      - image: ghcr.io/vert-sh/vert@sha256:11c2972ea336883acbfd46453332ef7ce677c3850dbf64b8d4283ec72c8bcb7b
+        imagePullPolicy: IfNotPresent
+        name: vert
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /var/cache/nginx
+          name: nginx-cache
+        - mountPath: /var/run
+          name: nginx-run
+      - args:
+        - --provider=oidc
+        - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+        - --upstream=http://127.0.0.1:80
+        - --http-address=0.0.0.0:4180
+        - --email-domain=*
+        - --pass-user-headers=false
+        - --cookie-secure=true
+        - --cookie-name=_oauth2_vert
+        - --cookie-domain=vert.srbii.com
+        - --redirect-url=https://vert.srbii.com/oauth2/callback
+        - --whitelist-domain=.srbii.com
+        - --skip-provider-button=true
+        - --session-cookie-minimal=true
+        envFrom:
+        - secretRef:
+            name: oauth2-proxy-secret
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        name: oauth2-proxy
+        ports:
+        - containerPort: 4180
+          name: proxy
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - emptyDir: {}
+        name: nginx-cache
+      - emptyDir: {}
+        name: nginx-run
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: oauth2-proxy-secret
+  namespace: vert
+spec:
+  encryptedData:
+    OAUTH2_PROXY_CLIENT_ID: AgCm/OWiGMtLdNI4aYrfZhhJBn7zcDdXH7cuyfHJRqC6SwBKoWIm0uFl69FVOFqwpX5jtmu7mLbW1OLHuAXHkMNHAlDPbDLwJzupH6f9qB7s8kw+sTIv7dgpL33zTCX1YMudvyc6JUik3G7BY/IqwbcI5dMnvCv+45xdXvWE3TnhJIBDiyupvlZksPUCfNfg7Isp4vr2VM8XyeejaMZI0eA1xQFfdKX8QUCTSLn830cf4Sw6xwUyT7rG2pbgc7zk3SZmdUSEnlc9nb6NWGARrP8rb5AHPzOikeb+zgD3DHS3RRM7zENg8DG5Fwkfap22ReryqwhxQwk+j4qI5kWU679VjvBSDkt9qsZ/r7S8Zqxmz9qUyOGCmVhoQrx99H6VfSOX1hR4p6gaSEdT/LAOhczTJXrgXPPBebas9cUnAPkpQb6N1Wbyx92GzRIX6gN5uAyeTApxyiNObSEHrom8aePEDQvR/oYKY4f3A84wzoE3lticB4TqkB6XtdaDwf4YTWJsKu5Olyq3MeBdykw0hME1uAg6AoryoOeuWwbx+fE3oiH08BaUk3DmUSn4PZy7uHywa1P+DYquWELRPmqVDAhcDuonc3OTXv4PrYk4bo9iyIEKG5wzTZNaT04E9LnHj2IxISAR5/9mu001D3O6Z4PglwsLvohSH4dSnBJfura5+Bx4pTKEUGFp8RtzmH7pu0xuwK0s7c67t5UT2A==
+    OAUTH2_PROXY_CLIENT_SECRET: AgBbZ6EGsmzznNWG678UBROcdpapSWarv8XVGoolUfuP+HI4Y4NC4pbOlYNWZeT/ajHClU1gUpyNIA1wnFkrDxnYAsHweDI6jTo5R+pxrxfkdaAKjk5vzVch0DGk2hvgxlPWgIH1fuiTfHQb/43dzzHA8av2n9tTEK5wifSg11hK7dyfdxFh5mALE6jmvvRL2Mv1lafDvnKDAv6YCYkDkkPlTveJVWSOwsNdU/sn/XrIY7Ipjte/skALwW7+IccwM3R2PkNpC8e54BdQm8nJ/s5r/kyZofvLczeBIjPzU8hvnWpF362YxYD2ngBQcY7W8mQbHi2eqQ0jEibV0ujrA2lefcRoYAt8O+iUfqrX7VcaoPh7qjslJg+yDhC9LJYR+P7e8foBktXKhatu0CaYolE6B1yCKP838hzY0MkQ7vvkxfuiXMwFk9Yr08Q0jSbgWijU5mQV6jaMKBFcmdI560fHtTrjxvGHfqqlTxpqi2AWth0IidENh1uzMSwy7yZxS4Sy31sEviu2LjESLnj3ZHzevSoEuoFTsJN5nMyoxIwhc0aC5YjZBv7T9RLUPLtPyiKg60uWjbn69SAB52IBcLzg3zdCk7sqOz/oftr0BPunWaF6wkBnyZcLvQW13tIdkRgggF73Kp3M27BSTi+MSdjP78ub48zN4LRYiMlRg5++npXrKR5hKwaR5je4m+zDSujmNlFNbK8KUVlcXF54MB/4MldjkKR5RwkvxCbSRukQJw==
+    OAUTH2_PROXY_COOKIE_SECRET: AgC48phHGmp6njPDIcA9lG8ZX67uqJrHlc+35pMMmdxlwjloyL1vWLtAxXar2Z19eCVdCPRR5//AeVqM6N8lmUyG3C6P7y/EQT6WEidiPfKQIxwrro0cMDoCMxvsSlBP1wgHInjsAO/UuiUz/Lr1WcsYGj/fORTj5cHgT8akVsbImZgT5mhddCaribD+HWJAClnN6Ip0erw2nU2gTjqAhRARq2V7CRjfmv3+YhQDi9lypAVm1tyruj3y3nbAmqGOqN2waZEqhnBwM3Trr7sdSRPwPg4CORN2w5fPZ25oz8UoK/GZM9oM4LqSd5B4ZECqnDZFXJ0OIXD44feFzUzjcrBRdQrdivJduA2U7qxY3JpTnKvGvXPH5eYf6RyB3AIY4NEbtEcZELBjBRmlCuvaoIdkfQG4sWJsCLqFtVoO/E8aB2BUjcI2XrT5b8Ge9YifPH7JzMbey9j0iL5n9JeAWGDmMzzbxwLG48bXQ4GFKqpQTveWAv3K804Yhy3/mHD1bCYVjDQFp6FUkQPCInYZpkoj8Ofv4k+wWdF4vNi/Xele9GZOgIYM97VJzfiM9zWoyaluiy9L1TiPhyOXCBDvpDlwSAVd1vgN48lDX19+uVAbEjau5+9pI94Fv+9JTerntjRoAIio82T6leDMUb6HqxSuexf02DQIvXnEyZS1HgWjfeC8hDSMW6drXkWY+j4OtTjtZqPI2RETugEsJHyLTgp8VwmpE3q/zx/3aN/6VFINxA==
+  template:
+    metadata:
+      name: oauth2-proxy-secret
+      namespace: vert
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: File Converter
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Tools
+    gethomepage.dev/href: https://vert.srbii.com
+    gethomepage.dev/icon: mdi-file-swap
+    gethomepage.dev/name: VERT
+    gethomepage.dev/weight: "43"
+  name: vert
+  namespace: vert
+spec:
+  hostnames:
+  - vert.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: vert
+      port: 4180
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: vert
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+    - ipBlock:
+        cidr: 192.168.8.0/24
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: fdae::/16
+  podSelector: {}
+  policyTypes:
+  - Ingress

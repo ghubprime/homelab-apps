@@ -1,0 +1,163 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+  name: homebox
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: homebox
+  namespace: homebox
+spec:
+  ports:
+  - name: http
+    port: 7745
+    protocol: TCP
+    targetPort: 7745
+  selector:
+    app: homebox
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: homebox-data
+  namespace: homebox
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: homebox
+  name: homebox
+  namespace: homebox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: homebox
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: homebox
+    spec:
+      containers:
+      - env:
+        - name: HBOX_OIDC_ENABLED
+          value: "true"
+        - name: HBOX_OIDC_ISSUER_URL
+          value: https://auth.srbii.com/realms/homelab
+        - name: HBOX_OIDC_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              key: HBOX_OIDC_CLIENT_ID
+              name: homebox-oauth-secret
+        - name: HBOX_OIDC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: HBOX_OIDC_CLIENT_SECRET
+              name: homebox-oauth-secret
+        - name: HBOX_OPTIONS_TRUST_PROXY
+          value: "true"
+        image: ghcr.io/sysadminsmedia/homebox:0.11.0
+        imagePullPolicy: IfNotPresent
+        name: homebox
+        ports:
+        - containerPort: 7745
+          name: http
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      priorityClassName: homelab-data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: homebox-data
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: homebox-oauth-secret
+  namespace: homebox
+spec:
+  encryptedData:
+    HBOX_OIDC_CLIENT_ID: AgA7XFuJfo+CaQumCbXzdXsVtxjXaWN0/B2wUwliljhJoamFZy5Lgsw37OmoLo1SAyuO5H5k63aw9lknbHItPgVf/K34+MEgUqCSMzRv4KFwLtzbNQ1+bzDt3HQDRcVNZ8SVMNuASImJZxouGWCRZIK3QHJkj4qwq7N6AialHL4QPJ9lS9sW8aisCbVtf+sbhNyy3EvlziT21VUGAFh4oSDzr9LRQ7IvL3bcfKiMj9VgW9BUSdCLjCgXLNuGAt6zpClX5p1UgnaYS8KpzzabYl0tRnJ0K+XSvg0qLeTfLvqVRBtdNg7mHK03mDrA7HSfuyDdnYoqbJT4rlCozBIKLbpYxdL0HFL/MA3z9y9XOJAl8NNUb2+6pAn1QXvHepNmdcdcy+ZNAC6SGXnG6pOu2RBMv5KxtVOqjR4Luaa51ZbrgEhuKBa2WZii2FuaHd9j+MbghKiX9MiRd1sL073b/jRntqDolvd5F/uRWrn0i+OceARh0qTZ8MvO2XaMUvVBtBWdd9a02wB7t4RyE86URvYxWtVHQgLXQ7Iwuoep3oHzsrFOgD0braVAXXCQVQVuyv2hDizQdnO5ch5OAdKWTPit3nWefqd8AkhwgS+xlH9sc0V3m35J5FtmLeGpXvgRjawfvFWErsoe85jiLp221pGAQxp2Kbns/mpwRVHeTMF6GOsCMtBNAiGZxkzVw/KB4BD8IAlu7XPMuVbxDT7RjQ==
+    HBOX_OIDC_CLIENT_SECRET: AgBgxFMeAvlxrodlR/aeAPWctzDot2MCEYmIBBmdaazGAjuaGvyylYEq6IwAb+HYp2CxmMA0b4Sfr3P1s6GnAQU5foqMKJWv4YB1jvs4MpbzYfT30vsf+m/R511g2rLG9/DLVLPCpPXgNq7ToT+FYhL6Z4IoqBnFpfB7HNROxM1ysvzxTa8I50wQ73G1L4sg1rxbZ9AOPLtl2GOdfcfKNYy+bS6g4ay6CWVEIF2HODUGtdVaARIxcLSKzAynYXO50NvIFc5SrjUEqUmTxbubnZxSwYB+rb+jTvvHzzw4h0Z8s6nvlP3sgFAHmRiTr4kFD6MX491wADbgFJxz10uvNmmZPhEURl72+SiNv24Nmqx7onk31Ov50VrcS1gWpz7R0b8JKX7ZHTI3wEiApsaX1wVrZDf119DLsWq9DCj6j9nba6LyLspIepaKughi5T/qMdHkL8pGLGWmb4r2lvOWTU8Mb3zQIlnlIiGsqfSHpQaiZ5METCwZbwyBFeVlfhU2OOUFC07JfTrrs5AhDlIIS30KLjoOp56lJvF7ctcxXiT16bway7fi5Gol8JAX8iMpecLVFsxxZ3qRz0bvKocdiAqYSrrYufqOLKNt7QGHm0DHksQmbTyDbuwnKzyT+s/eBeRt7BgEClxiSBd0UZKhZPxpQSocy5zjcTfkyE2GVa4TO3RhuyC3HKstHge6kF82uv3NaF+G0u4ozT40I5V+BhjGkQCTmGVX3lAoOOMhF1bPUQ==
+  template:
+    metadata:
+      name: homebox-oauth-secret
+      namespace: homebox
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: Inventory Management
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Applications
+    gethomepage.dev/href: https://inventory.srbii.com
+    gethomepage.dev/icon: mdi-package-variant-closed
+    gethomepage.dev/name: Homebox
+    gethomepage.dev/weight: "27"
+  name: homebox
+  namespace: homebox
+spec:
+  hostnames:
+  - inventory.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: homebox
+      port: 7745
+    filters:
+    - requestHeaderModifier:
+        set:
+        - name: X-Forwarded-Proto
+          value: https
+      type: RequestHeaderModifier
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: homebox
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+  podSelector: {}
+  policyTypes:
+  - Ingress

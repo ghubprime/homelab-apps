@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+  name: umami
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    omni-kube-service-exposer.sidero.dev/label: Umami Analytics
+    omni-kube-service-exposer.sidero.dev/port: "50087"
+    omni-kube-service-exposer.sidero.dev/prefix: umami
+  name: umami
+  namespace: umami
+spec:
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  selector:
+    app: umami
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: umami-postgres-data
+  namespace: umami
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: ceph-block
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: umami
+  name: umami
+  namespace: umami
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: umami
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: umami
+    spec:
+      containers:
+      - env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              key: DATABASE_URL
+              name: umami-secret
+        image: ghcr.io/umami-software/umami@sha256:e3f80c0625aad7179b49da27d475357cabb1068b8cacd9a792cfd6966888b123
+        imagePullPolicy: IfNotPresent
+        name: umami
+        ports:
+        - containerPort: 3000
+          name: http
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 128Mi
+      - env:
+        - name: POSTGRES_DB
+          value: umami
+        - name: POSTGRES_USER
+          value: umami
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: POSTGRES_PASSWORD
+              name: umami-secret
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        image: postgres:16-bookworm
+        name: postgres
+        ports:
+        - containerPort: 5432
+          name: postgres
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-data
+      priorityClassName: homelab-data
+      volumes:
+      - name: postgres-data
+        persistentVolumeClaim:
+          claimName: umami-postgres-data
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: umami-secret
+  namespace: umami
+spec:
+  encryptedData:
+    DATABASE_URL: AgCGWCXzX7ECoAZlvLzvi40BBQLl//YUPR/W6dZYnrObsuuWUAVlZTsWqLmy7c7buZrX4Z9x8IzcXmAeT+mjVAP4J8ZMY1n0VUv8sKvV3oQ4jgDtshKGWVYqNPGJZTVgrYzJF7Rz8G+z0twckq7Q9+iQ3LWShJ9z6HrCVuA+jPnLzuECr4P7pwxjBPuqxsgfX5oTa02JhneMzTP+742HuWO4vW/pe3jDcEi7s9lfXwmymvipBSwBqYgjXMNQqnDFsbraSr3abaaGkhtZO6ZznwiCsJ+aGzHKBP4fXV9mjBRHhHLK41jGT9xqqrN47iuK3vBroq3PXaMtC0OyaXQ0+SBLf+u4sBB4pjh4z559/FFFNqiFWafQPCmCHe17PxnMkONWLY0NtSmqG+MSNjBaNwBVMJK9d3Cj6BhXj3u/c9ip/JmxKJdDgZlC3hOF9CiFA3EGj0zYWqxfqz26cO6//nBe7dyLFAEbqu09imlG40VLOOKMtNCeEnrNmTaXUrb7BV4ituPUeqJaVq3XG4ZJwpARba7YfBm7knpQyvasNDowMJIZqq3/bd21jkso6mSM5K+N+b65ZHX6dtdpppJ27cEKmGI98lT7AULWDVRPU9n5b+A0TsrtS09J17GC4Rog9OdyD5Ewui7zkg2qhyEzfEbmOvaOkmYktuIOSUXOHzaLUv1LN+8RlhBQfpjVqvoMFETZAsyJVOQrOivg6I9/ZKy4VSCOTq++qb3+S4NIH8Xa0k5GWZFL9dlbQ3mClBSIOlcbHBv/WbSKi2MrzfzRFcqIvBsu7pPHx0k=
+    POSTGRES_PASSWORD: AgCgjBWy1V+YiUlIwQs5gGBTkySzCDZhX5uGW932x2Sv7uTD9/P3rzsKvGpNKaZIR4DNSZMfgYUFZhWGSvgijKHaLEUI1ekbrOVleMbGQ67kVU8cCJTtYk2a/XcSbQPVdaT5LiUDT7aEtu5PJilmDWsdEEk/ugSLDXj0Supy/bebWUVZ4QCo8PjP/x6KmbWtKr0/FNbEJkj878TkWhYcG8ZCLsRGEyXZnAXkpDC63OnWDmPQu6SJHt7I+SHaoxO8Kw4X2WBDO4u2/IuYp9Y8uJe6XaaOU5qhPy7+d9fqr4CdcVx2CkQQFhCNyl9rMb1ckkACKeMiU6aWuXkdHUZ/tJvVxzYXrBNbiPhbm9rt6dAW3o3ZWCCcE1IjdR8brlCvXD9BmaHuUvQSdmB/PVgOZz/tg21OBM0XUsQXyQOlHK7o/nBBUGiBYaEd/MbvncADCqOQuwWgjb8oSCOSUAO9AbJXKqEB3ckgcOsN05mIFUwCi7ZLz+d7YyjjbikB2dYfqLB0XNJxXN4nSNiqNr0sGINeesMHvGrhPqz69ZWtuL0qq7R+xkLTu8tSAoz9glveaaXiOGGeVfC65URFlSDnsqQsvpebSKgzI49aeMwVmAPxir/uEcO1d+XSSp2bxqc4+utpe88U8pfKl9ZULwCisvIqOqkC8fKjkHN9/oO6veCcPIDkdE7lQecSuyJFqkYJudMDM+WP0b0C6tkh7gAyD+Y+lUaEIpC0Pr+SBFGBQ6FcsQ==
+  template:
+    metadata:
+      name: umami-secret
+      namespace: umami
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: umami
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    - ipBlock:
+        cidr: 192.168.8.0/24
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: fdae::/16
+  podSelector: {}
+  policyTypes:
+  - Ingress

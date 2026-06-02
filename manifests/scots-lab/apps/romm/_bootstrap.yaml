@@ -1,0 +1,241 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+  name: romm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: romm-svc
+  namespace: romm
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: romm
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: romm-library
+  namespace: romm
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: ceph-block
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: romm-mariadb-data
+  namespace: romm
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: ceph-block
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: romm-resources
+  namespace: romm
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: ceph-block
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: romm
+  name: romm
+  namespace: romm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: romm
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: romm
+    spec:
+      containers:
+      - env:
+        - name: DB_HOST
+          value: 127.0.0.1
+        - name: DB_PORT
+          value: "3306"
+        - name: DB_NAME
+          value: romm
+        - name: ROMM_BASE_PATH
+          value: /
+        envFrom:
+        - secretRef:
+            name: romm-secret
+        image: rommapp/romm:4.8.1
+        imagePullPolicy: IfNotPresent
+        name: romm
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
+          requests:
+            cpu: 50m
+            memory: 256Mi
+        volumeMounts:
+        - mountPath: /romm/library
+          name: library
+        - mountPath: /romm/resources
+          name: resources
+      - env:
+        - name: MYSQL_DATABASE
+          value: romm
+        - name: MYSQL_USER
+          value: romm
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: DB_PASSWD
+              name: romm-secret
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: DB_PASSWD
+              name: romm-secret
+        image: mariadb:11-jammy
+        imagePullPolicy: IfNotPresent
+        name: mariadb
+        ports:
+        - containerPort: 3306
+          name: mariadb
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: mariadb-data
+      enableServiceLinks: false
+      priorityClassName: homelab-data
+      volumes:
+      - name: library
+        persistentVolumeClaim:
+          claimName: romm-library
+      - name: resources
+        persistentVolumeClaim:
+          claimName: romm-resources
+      - name: mariadb-data
+        persistentVolumeClaim:
+          claimName: romm-mariadb-data
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: oauth2-proxy-secret
+  namespace: romm
+spec:
+  encryptedData:
+    OAUTH2_PROXY_CLIENT_ID: AgCT2SvamqTptkWa+MlVXx4ral/Zw5U6T7GB7vhTOEFZXUKbJ5YyRnUKGFPi4dka+xgEvn09CzMTTo9wxSEbN0LiZvIQygMcUGNa95zG2Mtn19Gr7KmQoSSD7pGulPllYE65XcILjVIC8rNxotDkMmtyeX7zp62dn1AP7i0C+zHfQu2cEpd0qNSVHD75HecZoPeWmGhA5BIHG/8OLtB3W+gyv9XTxyAWroPyJFOIFsGjQHiGSd/oBuASn8SJty+3iPdwb1JWzSx6BCHhlJmMK9cBsXfk5dHcV20z/HRNaxdZLZ1UBNX5C66Q/fZtMwUG0SjIx0gDSA4TDf6c5Sc/ABqWJ9GXW+ituidkfATOaQ0JQL/69pKuBvhLdLwqd1pX94lLQ9jbeUVxjimgMp3OQ4MadVV7vWqHzmRn11GOSnRsRPPvJLDNumN6BWk9CFmcY6Cusoqs5aOGoToui6wa3uFx/fCzNgkSoApYHZey1Mk6D7/jZ0/9LTacIw7GS5NVqqOh6pK/ftDes1tOoY+JfgbG3pfAA8CwjnBndvKyd+mNNT1CT1qX/eKTmi/B1jCPNQUPcRqh+GnSIwU+CWv6QH0K2MM0+JQfbDj8DzBTjToJAfzj85UT04J6ORhpDeH+m63gvLBaVH6C/uDgYKLhcUcyaZE1Qpl4TiSDuPWiTDnyOllSTujbhls3uuJwDFfe40XkNeybp25BNtIJPQ==
+    OAUTH2_PROXY_CLIENT_SECRET: AgDFLotzg0gHTV8z3nTRv1RdjwGzwSW5IMNoueRMkfgcedHOZJRhAteSdxksTEZtTeVHhIbZyTWliWX9V2L9FHs3Hy5mSDuMU0WUaTqETsBmP97PC5XeDWSytf3H0AhCEuX7asgXnZe+DWgzW+AVi79pSQmMAcYsqdMvnoWA7aRYdN/eV388CgdASPa+xeqLzOY3tWxMaG3uPxEC6q2zARQzgIPscncvPNIMQ5n02b38f6xnuNEXcXagGjFfAdKYpxC/DuWcsFVCMMZ7g7yiTokeg289CJpv1UD0IZlYT16JQH7yfN6FPpPtYT/fIh4e1MFJawBYQzpjVsRqhra5OrCyO6EwTMW6IMfFrtDDJk8BIvB11QkoQZOvcs9WlxH3uoQcaX354qt7aqyCOBpTvgCKRHZoTlG7K/6mjtFZ2EGf02vBhZM5nP/aRBRZZWJ2i7r9BmYwSJL5uEfVCxya+/js3UJix/715+tVyW0Ur1lV4fXqpzS/4X976bMSunZzbZHQ+zATwns10q7/e+BZwbWufI+YePJhhY+PGV0YV+HvQe+aM5A+MZrRBQbvDOkwTlNxRZX2jkGlDXRD+V8ywTgQdac0ztMIcIrwU1wBejJzDJWEznG5GdceSp3xLDGgsyKm7FDGESj6SyjXB0NqWn3kN2jtAS4YiqcQiWSzDl09mPucZ/Oto16Lj5EWYim4iDeIYKtnJ3kqq4ZRrNur1vac83UDvcRQSdBBnF4kTSlmrw==
+    OAUTH2_PROXY_COOKIE_SECRET: AgAPK1ZNL6SxaF8FaF6CXCiFi09aqgSxAHp162zjgUj/UKzK9gI5z4NPqnGS3uhIGVBThR9wV5gACBkGpILXstbHrUUC7Z/oWEAljdBX2O3W3s1feJ/rNRDkLzdBNWfvGBh/OzAnty4DkQOvpwHLPCfVYo9srB/3sNpCrMjL3y8oB4sDGdB5Aywu2QCIBe61tY8S33ijQ5gmt8jq1Ps5AT//ll42NuiShyad7am/4/kw8bPrdkI0NomN51kVnHa9aguk2au6MNkVBWWbDE9fGvPHbGa/jJYJ03dG1/NPxZYB8o5DYvHh4xRzRdY5aiFbfRP1wk4bKGMRhc44BjuwYayjSzyJPrrxcVn1CzpLprz0nNW+fsCBDrOVU7VZOHilq1/gkJ/yOxoTgK8Lms8r5cyZiQjFyHFDDizm/xD8TBvo6Q4aBX/J4RJadR4zFAhIqV6DkZh1qCieqKCE3Dmqbrj3OVSuXJXTz++Chdg0724dAkIPsL4p/klD4EA99eUiy88VqEoPnG1GrPykSC4SIFp+V5S2Nc5ObEgNiG1yIiQuZb2/Bp14jurGk91kQMunWkdju/r0siaz+gVUsLdBQmNX2k7YoAOUmssa2A7M5YH0apftxDcyKvOXWK4+VxE5YF7OdcpBQZM7b6wBzqyEPHWstUI1GathokK4/hYIQBNRPHJaP+frpoHH/b/XjmBDQ/KFb65vCLG9GvFfpAzPB916gNQ6LjwC9UP9ZJlCrB4a1A==
+  template:
+    metadata:
+      name: oauth2-proxy-secret
+      namespace: romm
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: romm-secret
+  namespace: romm
+spec:
+  encryptedData:
+    DB_PASSWD: AgB6+DDIog0uuZcbOYTj6nr/H6zRoQYF+WBf5xsOlSqOFtCiwdPWJ7EjBWjSpjJzyLcu1zDH0AbDJXCud19U5txFdAXpC1bGaeOGGBwC/8zqRrqPgvMpCKaUnCdVb/e1LrWD4i6z8/elxJIJs+usmACtJL+uOyS8g3kpI9IOItG9Yp/vHiVEKI/+BkUbCiFO3znj8uzbefWd4dQIMSa3Qb8E9yWMTWmbMtboAx3mMH2JbYIFGOLcqtbMSo9r7ZXHFyYPaqtFUJBbRmjbbXOvW33/D0c7SLyYee/zecUNZ2CkSuTrmdzdVR4mDSncU1cDUSrR/ZP4BDJQKMOdIj/FJQb/5nzV+cgjjwVNML61mfYSZLpST5yWAvXpR6Ndv1d1YIzz/olz9feeB6N5H2fIbIk39gP4JMqhZQ2zKO0L9738rw9dpE8T0KuVG/JYOcYF5hFAOX1OirHz0KlCYAJXGgA/tIeLtshc8xnsr8YABQ/ooYyTpDnJPz9AQU7XHl/K3IOHY35OluhbhEYl5ehooiHJwZL3WABWreQO1gHFzv/X0FiA3Nm6MFL4ZhZSC6lhKUbgbjlfbJpAafScYnpV2zm9LthSptLdkgcVolDHHpCo/z4LeDrtDsVpZujrbhs7vWSMaddnnbRo2NjrDIzd0sogLIM3X7/cJ0PdVX6snn9mblfonsmJ3dBe+dxfltLVr7XNfNBnqRjib3XWd0DHHDCOClHEmHmt12j+JXs60+cjpA==
+    DB_USER: AgBcknowisc7iRDlv/aZxmYrlWKmm9Mu0V2rYLLo9GJGZUpQuXb5qa6f1zdtgS5OuMJHB79+7BefFELsninnMQi3FSZjERlL4d6AX+fbDhf3/X+yWpz1DTqz6bSI0iFLDFxFirB39EO+Af0uN3BaP4a1JHy/HSmfqNOOMAdnDlwwq5YrqVzX16ljD06qGGCQ9dQifjzvPhGiQm8DMretOoLwDCiyqHNDbEKPvqFrMWxjagCTJeLIl7J6jKaTccw8V2KoUEMfJOz62O4chxm8mq6/idDD3jcAQLo1B1a/UkCD45xg8tApd9yix8AtfUdEsNFrD0f6dAoZrSZ/vtuX6/RaF7IzEUC5121aa8hP3QMsLaZ7fReGVdIAI+WU1GuS3JUILs7bSqJy31Zuxoco2xNrYpCZ8rNBQ9XFJ9cQTlvhndIL2SrGDeVYpQV4kzS4E0FhDpac6kdXWZBZieL7Hd17Iefy5n4STPlzB8A4rmiHnBenLoT3CKHWXgnKmqv0v3pHKUU9PmaCWUO5IMYAhHEPj28AN3wzfWlcPpB8tLKfzZSO/H2n1g/ydJJnfxVfTluv9talNQtmSQBh5GKcC4jViq/7yThZjzWCPzEeJUXxGyCO0JrFBuPHapK0h3QziLRwjEaMJR1wW/0TH++K1JjEEirj7sx93bBXnVSyLhmSvL/5y+Bq85W5oEKSm/vZxpIKsWuf
+    ROMM_AUTH_SECRET_KEY: AgABSL+CxA61IcOKClbU8AbtdJ5RDqNyUWjVpmkA5uCca86wmcayjHMXjGA1CsP4PNfXfRQek8jAiCeow5Otja1tcyK/JY4vcDeoE9cTOZq9CSN3wN26//KUwvXXN6rGIlnKCV5c86ei64BMgtKsKoyEQaMFKMd5TP4ZBjj25Snc8ueOOk+qpCnk8dBb6rdb023rNwNuiDU7s8nyhEJhYbA2fEeVun11mUGJRWq7INPNeVKTeQOjHeDh2umY1ZzMOjp8sONBYaNfWUFGL+8T2qbe04CCf83Y8PHBOGVGEDzw0Q0Sgt0QxcQSzjjZfzSzZMq78OJXWVQrCiIh89WXwcCK7s5Rr4PzLYWLd0wJOH8hwJ8ZZS2BD48de3vFfzVjdzq3J85jfrGGkNqgu0+W0Lp18GVAWoRBt1StVf8aRCRNU1R/H+JJg4Wh/7mtihHC0UdH+TaQGeuZjCUis1eXmv9ZPqp8gvt+XHf8LpLpykX8z/4qVNihiEgKniPaV8jEWyAWu3Ku1Ea3udLia9AgHZRyPwRmhVVsMdvwP6jFczivCiapk325d1nW1MipFXGPo0wKMFOuCYp3k3221Ul8DUrDrEuN6RaB+Kz50dQPEkQgL1a46da0/36W4H+0H7Y/tjSHR0xvpopUrM82wRS7ksRUEu0xWX2ANWPNkSIsomce5CwfZD26KO1I9dfgI61pJXsdL0dmgzotocCyZJRYVyfsKj40W+y6PBTRq2ZFYsPAD2OBgFO6/atMrvsWni2TAfJMpbCdrCc+V5pgeGGnTA==
+  template:
+    metadata:
+      name: romm-secret
+      namespace: romm
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: ROM Manager
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Applications
+    gethomepage.dev/href: https://roms.srbii.com
+    gethomepage.dev/icon: mdi-controller-classic
+    gethomepage.dev/name: RomM
+    gethomepage.dev/weight: "26"
+  name: romm
+  namespace: romm
+spec:
+  hostnames:
+  - roms.srbii.com
+  - play.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: romm-svc
+      port: 8080
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: romm
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+    - ipBlock:
+        cidr: 192.168.8.0/24
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: fdae::/16
+  podSelector: {}
+  policyTypes:
+  - Ingress

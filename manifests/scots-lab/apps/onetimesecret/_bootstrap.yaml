@@ -1,0 +1,193 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+  name: onetimesecret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onetimesecret
+  namespace: onetimesecret
+spec:
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  selector:
+    app: onetimesecret
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: onetimesecret-redis-data
+  namespace: onetimesecret
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: ceph-block
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: onetimesecret
+  name: onetimesecret
+  namespace: onetimesecret
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: onetimesecret
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: onetimesecret
+    spec:
+      containers:
+      - env:
+        - name: REDIS_URL
+          value: redis://127.0.0.1:6379/0
+        - name: HOST
+          value: expires.srbii.com
+        - name: SSL
+          value: "true"
+        - name: RACK_ENV
+          value: production
+        - name: AUTH_REQUIRED
+          value: "false"
+        envFrom:
+        - secretRef:
+            name: onetimesecret-secret
+        image: onetimesecret/onetimesecret:v0.24.7
+        name: onetimesecret
+        ports:
+        - containerPort: 3000
+          name: http
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+      - command:
+        - redis-server
+        - --appendonly
+        - "yes"
+        image: redis:7-bookworm
+        name: redis
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 999
+        volumeMounts:
+        - mountPath: /data
+          name: redis-data
+      priorityClassName: homelab-data
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: onetimesecret-redis-data
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: onetimesecret-secret
+  namespace: onetimesecret
+spec:
+  encryptedData:
+    SECRET: AgA37D9VGRIVbl4lq73beJkwyx783rMQ/6/7HIzECFYBeCVwGEshGXDsZQKKkGewhBIcVXnIqeh1X/furpgdF4Y7qokQ7xr8tgtIBkSdQeSxTX+w9fDbiPZVRrYURzez3fRgKp64lC68ZhRtztCL7v+eGMnhgB1Q2G1moxPlOV90YquHyFC0E6gVmRASHza1dEOl1A7aJPDFt8CHMF+7Or8GstZuPpfWJcayjrfGNt2rEaUN67eo2nRbjmHNtMOOA31EtrZRsn2z6nfQSI7Flx6RXWkLK0AkkGfPlQFgjMeiQXZmy08J5H/t+NuZfIGjkxyOvlAABOCzAkef1lx+FU52v5whUWbgas0w98uo+FEdz+s3TaPxSAba2zPHhlrdqT3FVpQJhq32IHWcd7VjTGY04Et5ssRYiETvSrhTZIFeO1zzqRmbCsL8Jm+gUhptaEvDV0XmEoU/xo1tDZ/8o9fZWQPeqfUAf6l4VabwTs2rAx2nzb/eRPgzSq17EQEL5gEmGMtBOxjWG7BxZC/lzz9KQI5WhCislRwZKBLxE8HfS0OCRiaENl6PC7tY8YJksIJObdOwAphiir4Oq8YlQosLxsMRGxG7LCxfrip3yJPzRu2jov0lZFElENKC+LMfzPJXPt3qU8onouRTX4Kd+BWX7pNRo9UJv9M/Q0xKsea3GlqLA08wPk6ZLWFRg5QZWUjS1VLzEWHaSJjWJm0zQWJCPLYQHZ//Qg41NHINU0Y3d3kI079d55RbOqKCST33z3BrE6ZrztE3ZJ+WRZiY7gOS
+  template:
+    metadata:
+      name: onetimesecret-secret
+      namespace: onetimesecret
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations:
+    gethomepage.dev/description: Secure Secret Sharing
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: Monitoring
+    gethomepage.dev/href: https://expires.srbii.com
+    gethomepage.dev/icon: mdi-lock-clock
+    gethomepage.dev/name: OneTimeSecret
+    gethomepage.dev/weight: "52"
+  name: onetimesecret
+  namespace: onetimesecret
+spec:
+  hostnames:
+  - expires.srbii.com
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  rules:
+  - backendRefs:
+    - name: onetimesecret
+      port: 3000
+    matches:
+    - path:
+        type: PathPrefix
+        value: /
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: baseline-isolation
+  namespace: onetimesecret
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kgateway-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-prometheus-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: uptime-kuma
+    - ipBlock:
+        cidr: 192.168.8.0/24
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: fdae::/16
+  podSelector: {}
+  policyTypes:
+  - Ingress
