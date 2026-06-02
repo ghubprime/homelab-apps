@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apache-oidc-config
+  namespace: znuny
+data:
+  oidc-header.conf: |
+    # Map X-Forwarded-Email from oauth2-proxy into REMOTE_USER for Znuny HTTPBasicAuth
+    SetEnvIf X-Forwarded-Email "(.*)" REMOTE_USER=$1

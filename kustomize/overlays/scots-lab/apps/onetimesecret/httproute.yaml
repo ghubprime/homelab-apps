@@ -1,0 +1,27 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: onetimesecret
+  namespace: onetimesecret
+  annotations:
+    gethomepage.dev/enabled: 'true'
+    gethomepage.dev/name: OneTimeSecret
+    gethomepage.dev/group: Monitoring
+    gethomepage.dev/description: Secure Secret Sharing
+    gethomepage.dev/icon: mdi-lock-clock
+    gethomepage.dev/href: https://expires.srbii.com
+    gethomepage.dev/weight: '52'
+spec:
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  hostnames:
+  - expires.srbii.com
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: onetimesecret
+      port: 3000

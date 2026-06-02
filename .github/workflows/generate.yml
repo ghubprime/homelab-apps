@@ -1,0 +1,80 @@
+name: Generate K8s Manifests
+
+# Run on every push to main
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  generate-and-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required so the GitHub bot can push commits back to the repo
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # Required for git diff in generate-manifests.sh
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: 'v3.12.0'
+
+      - name: Install Kustomize
+        run: |
+          cd /tmp
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s 5.4.3
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION="v0.6.7"
+          curl -sL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/kubeconform /usr/local/bin/
+
+      - name: Make script executable and run it
+        run: |
+          chmod +x ./generate-manifests.sh
+          ./generate-manifests.sh --force
+
+      - name: Validate generated manifests
+        run: |
+          FAILED=0
+          for manifest in manifests/**/_bootstrap.yaml; do
+            if [ ! -f "$manifest" ]; then
+              continue
+            fi
+
+            # Guard: Reject empty or near-empty manifests (0-byte deletion trap)
+            SIZE=$(stat -c%s "$manifest" 2>/dev/null || echo 0)
+            if [ "$SIZE" -lt 10 ]; then
+              echo "❌ FATAL: $manifest is empty or near-empty (${SIZE} bytes) — refusing to commit"
+              FAILED=1
+              continue
+            fi
+
+            # Validate YAML structure and K8s schema conformance
+            # --ignore-missing-schemas: skip CRDs (Cilium, Gateway API, etc.) that have no upstream schema
+            # --summary: only show errors, not every valid resource
+            kubeconform \
+              --kubernetes-version 1.35.2 \
+              --ignore-missing-schemas \
+              --summary \
+              --output text \
+              "$manifest" || FAILED=1
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::Manifest validation failed — aborting commit to prevent ArgoCD auto-sync of broken state"
+            exit 1
+          fi
+          echo "✅ All manifests validated successfully"
+
+      - name: Commit and Push generated manifests
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          # The [skip ci] prevents this automated commit from triggering an infinite loop of actions
+          commit_message: "chore: auto-generate K8s manifests [skip ci]" 

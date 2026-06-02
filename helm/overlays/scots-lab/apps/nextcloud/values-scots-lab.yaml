@@ -1,0 +1,88 @@
+# values-scots-lab.yaml for Nextcloud App
+# force rebuild
+# Nextcloud and Postgres on Ceph block storage
+
+image:
+  repository: nextcloud
+  tag: 33.0.2-apache
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: false
+
+service:
+  type: ClusterIP
+  port: 8080
+
+nextcloud:
+  host: files.srbii.com
+  database: postgresql
+  
+  extraEnv:
+    - name: OIDC_CLIENT_ID
+      valueFrom:
+        secretKeyRef:
+          name: nextcloud-oidc-secret
+          key: OIDC_CLIENT_ID
+    - name: OIDC_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: nextcloud-oidc-secret
+          key: OIDC_CLIENT_SECRET
+    - name: OIDC_ISSUER_URL
+      valueFrom:
+        secretKeyRef:
+          name: nextcloud-oidc-secret
+          key: OIDC_ISSUER_URL
+
+  
+  # Increase Apache header size limits for Cloudflare Tunnel JWT headers (Rule #26)
+  extraVolumes:
+    - name: apache-header-fix
+      configMap:
+        name: nextcloud-apache-header-fix
+  extraVolumeMounts:
+    - name: apache-header-fix
+      mountPath: /etc/apache2/conf-enabled/cloudflare-headers.conf
+      subPath: cloudflare-headers.conf
+
+  # Set Trusted Domains
+  configs:
+    proxy.config.php: |-
+      <?php
+      $CONFIG = array (
+        'trusted_proxies' => array('10.0.0.0/8', '192.168.0.0/16', '172.16.0.0/12'),
+        'overwriteprotocol' => 'https',
+      );
+    trusted_domains.config.php: |-
+      <?php
+      $CONFIG = array (
+        'trusted_domains' => array(
+          0 => 'files.srbii.com',
+          1 => 'localhost',
+          2 => '10.*',
+          3 => '192.168.*',
+        ),
+      );
+
+persistence:
+  enabled: true
+  storageClass: ceph-block
+  size: 100Gi
+  accessMode: ReadWriteOnce
+
+postgresql:
+  enabled: true
+  image:
+    repository: bitnamilegacy/postgresql
+    tag: "15.4.0-debian-11-r45"
+  global:
+    postgresql:
+      auth:
+        database: nextcloud
+        username: nextcloud
+  primary:
+    persistence:
+      enabled: true
+      storageClass: ceph-block
+      size: 20Gi

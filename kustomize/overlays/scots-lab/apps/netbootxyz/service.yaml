@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: netbootxyz
+  namespace: netbootxyz
+  annotations:
+    omni-kube-service-exposer.sidero.dev/label: "Netboot.xyz"
+    omni-kube-service-exposer.sidero.dev/prefix: "netboot"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: netbootxyz
+  ports:
+    - name: webui
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+    - name: assets
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

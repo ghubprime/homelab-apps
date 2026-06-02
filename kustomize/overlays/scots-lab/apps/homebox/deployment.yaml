@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homebox
+  namespace: homebox
+  labels:
+    app: homebox
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: homebox
+  template:
+    metadata:
+      labels:
+        app: homebox
+    spec:
+      priorityClassName: homelab-data
+      containers:
+        - name: homebox
+          image: ghcr.io/sysadminsmedia/homebox:0.11.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 7745
+              name: http
+          env:
+            - name: HBOX_OIDC_ENABLED
+              value: "true"
+            - name: HBOX_OIDC_ISSUER_URL
+              value: "https://auth.srbii.com/realms/homelab"
+            - name: HBOX_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: homebox-oauth-secret
+                  key: HBOX_OIDC_CLIENT_ID
+            - name: HBOX_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homebox-oauth-secret
+                  key: HBOX_OIDC_CLIENT_SECRET
+            - name: HBOX_OPTIONS_TRUST_PROXY
+              value: "true"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: homebox-data

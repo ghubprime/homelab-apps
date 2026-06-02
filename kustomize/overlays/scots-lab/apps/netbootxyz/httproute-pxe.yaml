@@ -1,0 +1,22 @@
+# Unauthenticated route for iPXE remote boot assets.
+# PXE firmware cannot handle OAuth2, so this route bypasses oauth2-proxy
+# and sends traffic directly to the netbootxyz assets server on port 8080.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: netbootxyz-pxe
+  namespace: netbootxyz
+spec:
+  parentRefs:
+    - name: kgateway-http
+      namespace: kgateway-system
+  hostnames:
+    - "pxe.srbii.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: netbootxyz
+          port: 8080

@@ -1,0 +1,33 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: immich
+  namespace: immich
+  annotations:
+    gethomepage.dev/enabled: 'true'
+    gethomepage.dev/name: Immich
+    gethomepage.dev/group: Applications
+    gethomepage.dev/description: Photo & Video Backup
+    gethomepage.dev/icon: immich.png
+    gethomepage.dev/href: https://media.srbii.com
+    gethomepage.dev/weight: '28'
+spec:
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  hostnames:
+  - media.srbii.com
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+        - name: X-Forwarded-Proto
+          value: https
+    backendRefs:
+    - name: immich-server
+      port: 2283

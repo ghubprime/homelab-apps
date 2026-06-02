@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onetimesecret
+  namespace: onetimesecret
+  labels:
+    app: onetimesecret
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: onetimesecret
+  template:
+    metadata:
+      labels:
+        app: onetimesecret
+    spec:
+      priorityClassName: homelab-data
+      containers:
+      - name: onetimesecret
+        image: onetimesecret/onetimesecret:v0.24.7
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: REDIS_URL
+          value: redis://127.0.0.1:6379/0
+        - name: HOST
+          value: expires.srbii.com
+        - name: SSL
+          value: 'true'
+        - name: RACK_ENV
+          value: production
+        - name: AUTH_REQUIRED
+          value: 'false'
+        envFrom:
+        - secretRef:
+            name: onetimesecret-secret
+        resources:
+          requests:
+            cpu: 10m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          runAsUser: 1000
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      - name: redis
+        image: redis:7-bookworm
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - --appendonly
+        - 'yes'
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        securityContext:
+          runAsUser: 999
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: onetimesecret-redis-data
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntfy
+  namespace: ntfy
+  labels:
+    app: ntfy
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ntfy
+  template:
+    metadata:
+      labels:
+        app: ntfy
+    spec:
+      priorityClassName: homelab-data
+      containers:
+        - name: ntfy
+          # Pinned from :latest for Renovate tracking and rollback safety
+          image: binwiederhier/ntfy:v2.23.0
+          imagePullPolicy: IfNotPresent
+          args: ["serve"]
+          ports:
+            - containerPort: 80
+              name: http
+          volumeMounts:
+            - name: ntfy-data
+              mountPath: /var/lib/ntfy
+            - name: ntfy-config
+              mountPath: /etc/ntfy/server.yml
+              subPath: server.yml
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+
+      volumes:
+        - name: ntfy-data
+          persistentVolumeClaim:
+            claimName: ntfy-data
+        - name: ntfy-config
+          configMap:
+            name: ntfy-config

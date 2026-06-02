@@ -1,0 +1,27 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: linkwarden
+  namespace: linkwarden
+  annotations:
+    gethomepage.dev/enabled: 'true'
+    gethomepage.dev/name: Linkwarden
+    gethomepage.dev/group: Applications
+    gethomepage.dev/description: Bookmark Manager
+    gethomepage.dev/icon: linkwarden.png
+    gethomepage.dev/href: https://links.srbii.com
+    gethomepage.dev/weight: '24'
+spec:
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  hostnames:
+  - links.srbii.com
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: linkwarden
+      port: 3000

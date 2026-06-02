@@ -1,0 +1,79 @@
+# PhotoPrism Community Edition — scots-lab values
+# CPU-only; no GPU acceleration. Initial indexing will be slower but fully functional.
+# Chart: photoprism/photoprism-plus v1.0.4
+
+image:
+  repository: docker.io/photoprism/photoprism
+  tag: "ce"
+  pullPolicy: IfNotPresent
+
+adminUser: "admin"
+adminPassword: "changeme"    # Fallback local admin — OIDC is primary auth
+
+# OIDC — native chart block
+# PHOTOPRISM_OIDC_SECRET is injected separately via SealedSecret envFrom patch
+oidc:
+  PHOTOPRISM_DISABLE_OIDC: false
+  PHOTOPRISM_OIDC_URI: "https://auth.srbii.com/realms/homelab"
+  PHOTOPRISM_OIDC_CLIENT: "photoprism-client"
+  PHOTOPRISM_OIDC_SECRET: ""
+  PHOTOPRISM_OIDC_REGISTER: true
+  PHOTOPRISM_OIDC_PROVIDER: "Keycloak"
+  PHOTOPRISM_OIDC_ICON: ""
+  PHOTOPRISM_OIDC_REDIRECT: false
+  PHOTOPRISM_OIDC_USERNAME: "preferred_username"
+
+# Core PhotoPrism config
+config:
+  PHOTOPRISM_SITE_URL: "https://photos.srbii.com/"
+  PHOTOPRISM_SITE_TITLE: "Photos"
+  PHOTOPRISM_SITE_CAPTION: "AI-Powered Photos"
+  PHOTOPRISM_DISABLE_TLS: true         # Rule #18: Cloudflare Tunnel terminates TLS
+  PHOTOPRISM_DISABLE_STS: true
+  PHOTOPRISM_UPLOAD_NSFW: true
+  PHOTOPRISM_ORIGINALS_LIMIT: 50000    # 50 GB max file size (MB)
+  PHOTOPRISM_AUTH_MODE: "password"
+  PHOTOPRISM_LOG_LEVEL: "info"
+  PHOTOPRISM_HTTP_COMPRESSION: "gzip"
+  PHOTOPRISM_SESSION_MAXAGE: "1209600"
+
+# SQLite database (chart default — no external DB needed for single-user homelab)
+database:
+  driver: "sqlite"
+
+# Persistent storage on Ceph
+persistence:
+  storageClassName: "ceph-block"
+  originals:
+    enabled: true
+    size: 100Gi
+    accessModes:
+      - ReadWriteOnce
+  storage:
+    enabled: true
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+
+# Ingress disabled — using kGateway HTTPRoute + Cloudflare Tunnel
+ingress:
+  enabled: false
+
+# Conservative resource requests to avoid Ceph CPU saturation
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+# The photoprism:ce image uses s6-overlay which requires root to bootstrap
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  runAsGroup: 0
+  allowPrivilegeEscalation: true
+
+podSecurityContext:
+  fsGroup: 0

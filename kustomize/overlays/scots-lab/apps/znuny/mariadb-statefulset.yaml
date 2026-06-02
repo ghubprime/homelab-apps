@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: znuny-mariadb
+  namespace: znuny
+  labels:
+    app: znuny-mariadb
+spec:
+  serviceName: znuny-mariadb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: znuny-mariadb
+  template:
+    metadata:
+      labels:
+        app: znuny-mariadb
+    spec:
+      containers:
+        - name: mariadb
+          image: mariadb:10.11
+          args:
+            - --max_allowed_packet=128M
+            - --innodb_log_file_size=256M
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_unicode_ci
+          ports:
+            - containerPort: 3306
+              name: mysql
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: znuny-db-secret
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DATABASE
+              value: "znuny"
+            - name: MYSQL_USER
+              value: "znuny"
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: znuny-db-secret
+                  key: MYSQL_PASSWORD
+            - name: TZ
+              value: "UTC"
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/mysql
+          livenessProbe:
+            exec:
+              command:
+                - mysqladmin
+                - ping
+                - -h
+                - localhost
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - mysqladmin
+                - ping
+                - -h
+                - localhost
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: db-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: ceph-block
+        resources:
+          requests:
+            storage: 10Gi

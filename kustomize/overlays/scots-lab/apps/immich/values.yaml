@@ -1,0 +1,42 @@
+controllers:
+  main:
+    strategy: Recreate
+    pod:
+      priorityClassName: homelab-data
+    containers:
+      main:
+        env:
+          DB_HOSTNAME: "immich-postgres"
+          DB_USERNAME: "immich"
+          DB_PASSWORD: "immich"
+          DB_DATABASE_NAME: "immich"
+          REDIS_HOSTNAME: "immich-redis-master"
+          DB_URL: "postgresql://immich:immich@immich-postgres:5432/immich?sslmode=disable"
+          IMMICH_IGNORE_MOUNT_CHECK_ERRORS: "true"
+
+server:
+  image:
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+machine-learning:
+  image:
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 500Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+immich:
+  persistence:
+    library:
+      existingClaim: immich-library-pvc

@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stirling-pdf
+  namespace: stirling-pdf
+  labels:
+    app: stirling-pdf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stirling-pdf
+  template:
+    metadata:
+      labels:
+        app: stirling-pdf
+    spec:
+      containers:
+        - name: stirling-pdf
+          # Pinned from :latest for Renovate tracking and rollback safety
+          image: frooodle/s-pdf:0.46.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DOCKER_ENABLE_SECURITY
+              value: "false"
+            - name: SECURITY_ENABLELOGIN
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+          args:
+            - --provider=oidc
+            - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+            - --upstream=http://127.0.0.1:8080
+            - --http-address=0.0.0.0:4180
+            - --email-domain=*
+            - --pass-user-headers=false
+            - --cookie-secure=true
+            - --cookie-name=_oauth2_pdf
+            - --cookie-domain=pdf.srbii.com
+            - --redirect-url=https://pdf.srbii.com/oauth2/callback
+            - --whitelist-domain=.srbii.com
+            - --skip-provider-button=true
+            - --session-cookie-minimal=true
+          envFrom:
+            - secretRef:
+                name: oauth2-proxy-secret
+          ports:
+            - containerPort: 4180
+              name: proxy
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi

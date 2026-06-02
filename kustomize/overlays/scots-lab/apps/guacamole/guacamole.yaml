@@ -1,0 +1,179 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacamole
+  namespace: guacamole
+  labels:
+    app.kubernetes.io/name: guacamole
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: guacamole
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: guacamole
+    spec:
+      initContainers:
+        - name: wait-for-db
+          image: postgres:16-alpine
+          command: ['sh', '-c', 'until pg_isready -h guacamole-postgresql -p 5432 -U guacamole; do echo waiting for db; sleep 2; done;']
+        - name: generate-schema
+          image: guacamole/guacamole:1.5.5
+          command: ['sh', '-c']
+          args:
+            - |
+              if [ ! -f /initdb-dir/initdb.sql ]; then
+                echo "Generating schema..."
+                /opt/guacamole/bin/initdb.sh --postgresql > /initdb-dir/initdb.sql || exit 1;
+              fi
+          volumeMounts:
+            - name: initdb-vol
+              mountPath: /initdb-dir
+        - name: apply-schema
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_HOSTNAME
+              value: guacamole-postgresql
+            - name: POSTGRES_DATABASE
+              value: guacamole
+            - name: POSTGRES_USER
+              value: guacamole
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: guacamole-db-secret
+                  key: POSTGRES_PASSWORD
+          command: ['sh', '-c']
+          args:
+            - |
+              export PGPASSWORD=$POSTGRES_PASSWORD
+              if ! psql -h $POSTGRES_HOSTNAME -U $POSTGRES_USER -d $POSTGRES_DATABASE -c '\dt' | grep -q 'guacamole_user'; then
+                echo "Database empty. Initializing..."
+                cat /initdb-dir/initdb.sql | psql -h $POSTGRES_HOSTNAME -U $POSTGRES_USER -d $POSTGRES_DATABASE
+              else
+                echo "Database already initialized."
+              fi
+          volumeMounts:
+            - name: initdb-vol
+              mountPath: /initdb-dir
+      containers:
+        - name: guacamole
+          image: guacamole/guacamole:1.5.5
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            # Guacd Connection
+            - name: GUACD_HOSTNAME
+              value: guacd
+            - name: GUACD_PORT
+              value: "4822"
+            
+            # Application Context
+            - name: WEBAPP_CONTEXT
+              value: "ROOT"
+            
+            # Database Connection
+            - name: POSTGRES_HOSTNAME
+              value: guacamole-postgresql
+            - name: POSTGRES_DATABASE
+              value: guacamole
+            - name: POSTGRES_USER
+              value: guacamole
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: guacamole-db-secret
+                  key: POSTGRES_PASSWORD
+
+            # OpenID Connect (Keycloak)
+            - name: OPENID_AUTHORIZATION_ENDPOINT
+              value: "https://auth.srbii.com/realms/homelab/protocol/openid-connect/auth"
+            - name: OPENID_JWKS_ENDPOINT
+              value: "http://localhost:8081/realms/homelab/protocol/openid-connect/certs"
+            - name: OPENID_ISSUER
+              value: "https://auth.srbii.com/realms/homelab"
+            - name: OPENID_CLIENT_ID
+              value: "guacamole-client"
+            - name: OPENID_REDIRECT_URI
+              value: "https://guacamole.srbii.com"
+            # Rule 23: Numerical timeout string explicitly double quoted to avoid scientific parser corruption 
+            - name: OPENID_MAX_TOKEN_VALIDITY
+              value: "1209600"
+            - name: OPENID_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: guacamole-oidc-secret
+                  key: OIDC_CLIENT_SECRET
+                  optional: false
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+        - name: user-agent-spoofer
+          image: nginx:alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cat << 'EOF' > /etc/nginx/nginx.conf
+              events {}
+              http {
+                server {
+                  listen 8081;
+                  location / {
+                    proxy_pass https://auth.srbii.com;
+                    proxy_set_header Host auth.srbii.com;
+                    proxy_set_header User-Agent 'curl/7.88.1';
+                    proxy_ssl_server_name on;
+                    proxy_ssl_name auth.srbii.com;
+                  }
+                }
+              }
+              EOF
+              nginx -g 'daemon off;'
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "50m"
+              memory: "64Mi"
+      volumes:
+        - name: initdb-vol
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacamole
+  namespace: guacamole
+  labels:
+    app.kubernetes.io/name: guacamole
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: guacamole

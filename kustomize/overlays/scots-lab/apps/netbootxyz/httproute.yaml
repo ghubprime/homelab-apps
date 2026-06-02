@@ -1,0 +1,27 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: netbootxyz
+  namespace: netbootxyz
+  annotations:
+    gethomepage.dev/enabled: 'true'
+    gethomepage.dev/name: Netboot.xyz
+    gethomepage.dev/group: Tools
+    gethomepage.dev/description: Network Boot Manager
+    gethomepage.dev/icon: mdi-lan-connect
+    gethomepage.dev/href: https://boot.srbii.com
+    gethomepage.dev/weight: '46'
+spec:
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  hostnames:
+  - boot.srbii.com
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: netbootxyz-web
+      port: 4180

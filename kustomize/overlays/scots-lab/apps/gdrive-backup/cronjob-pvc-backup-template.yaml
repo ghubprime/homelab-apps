@@ -1,0 +1,127 @@
+# =============================================================================
+# Tier 3B — Direct PVC-to-GDrive Backup (Per-Namespace Pattern)
+# =============================================================================
+#
+# IMPORTANT: Kubernetes does not support cross-namespace PVC mounting.
+# This file is a TEMPLATE showing how to deploy a per-namespace backup
+# CronJob for each stateful application.
+#
+# To enable Tier 3B for an application:
+#
+#   1. Copy the CronJob block below into the target app's Kustomize overlay
+#      (e.g., kustomize/overlays/scots-lab/apps/nextcloud/cronjob-gdrive-backup.yaml)
+#
+#   2. Replace the placeholders:
+#      - <APP_NAME>:       Application name (e.g., nextcloud)
+#      - <APP_NAMESPACE>:  Kubernetes namespace (e.g., nextcloud)
+#      - <PVC_CLAIM_NAME>: Name of the PVC to back up (e.g., nextcloud-data)
+#      - <MOUNT_PATH>:     PVC mount path (e.g., /data)
+#
+#   3. Add the rclone-config SealedSecret to the target namespace
+#      (each namespace needs its own sealed copy — seal with scope: namespace-wide)
+#
+#   4. Add the CronJob to the app's kustomization.yaml resources list
+#
+# Recommended apps for Tier 3B (stateful with irreplaceable data):
+#   - nextcloud       (files, contacts, calendars)
+#   - paperless        (scanned documents + OCR)
+#   - immich           (photo/video library — potentially very large)
+#   - photoprism       (photo library)
+#   - outline          (wiki — PostgreSQL + MinIO)
+#   - actual-budget    (financial data — SQLite)
+#   - linkwarden       (bookmarks — PostgreSQL)
+#   - romm             (ROM library — MariaDB + 50Gi library PVC)
+#   - adguard-home     (DNS config)
+#   - homebox          (inventory — SQLite)
+# =============================================================================
+
+# --- TEMPLATE: Copy and customize per-app ---
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gdrive-pvc-backup-<APP_NAME>
+  namespace: <APP_NAMESPACE>
+  labels:
+    app.kubernetes.io/name: gdrive-backup
+    app.kubernetes.io/component: pvc-backup
+    app.kubernetes.io/part-of: <APP_NAME>
+spec:
+  schedule: "0 2 * * 0"  # Weekly, Sunday at 2:00 AM UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 14400  # 4 hour timeout
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: gdrive-backup
+            app.kubernetes.io/component: pvc-backup
+            app.kubernetes.io/part-of: <APP_NAME>
+        spec:
+          automountServiceAccountToken: false
+          containers:
+          - name: rclone
+            image: rclone/rclone:1.69
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                DATE=$(date +%Y-%m-%d)
+                APP="<APP_NAME>"
+                echo "=== GDrive PVC Backup: $APP @ $DATE ==="
+
+                rclone copy \
+                  /data \
+                  "GDrive:pvc-snapshots/$APP/$DATE" \
+                  --config /config/rclone.conf \
+                  --transfers 4 \
+                  --checkers 8 \
+                  --log-level INFO \
+                  --stats 60s \
+                  --stats-one-line
+
+                EXIT_CODE=$?
+                if [ $EXIT_CODE -eq 0 ]; then
+                  echo "=== Backup of $APP completed successfully ==="
+                  # Uncomment to ping healthcheck:
+                  # curl -fsS -m 10 --retry 5 https://ping.srbii.com/api/v1/ping/<UUID> > /dev/null
+                else
+                  echo "=== Backup of $APP FAILED (exit $EXIT_CODE) ==="
+                  # curl -fsS -m 10 --retry 5 https://ping.srbii.com/api/v1/ping/<UUID>/fail > /dev/null
+                  exit $EXIT_CODE
+                fi
+            volumeMounts:
+            - name: rclone-config
+              mountPath: /config
+              readOnly: true
+            - name: app-data
+              mountPath: /data
+              readOnly: true
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: [ALL]
+              seccompProfile:
+                type: RuntimeDefault
+          restartPolicy: OnFailure
+          volumes:
+          - name: rclone-config
+            secret:
+              secretName: rclone-config
+          - name: app-data
+            persistentVolumeClaim:
+              claimName: <PVC_CLAIM_NAME>
+              readOnly: true

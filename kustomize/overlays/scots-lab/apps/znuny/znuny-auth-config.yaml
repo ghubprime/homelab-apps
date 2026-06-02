@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: znuny-auth-config
+  namespace: znuny
+data:
+  ZZZA_OIDC.pm: |
+    package Kernel::Config::Files::ZZZA_OIDC;
+    use strict;
+    use warnings;
+    use utf8;
+    sub Load {
+        my ($File, $Self) = @_;
+        
+        # Override default DB Auth to use Apache REMOTE_USER injected by oauth2-proxy
+        $Self->{'AuthModule'} = 'Kernel::System::Auth::HTTPBasicAuth';
+        
+        # Enable SSO for Customer Users as well
+        $Self->{'Customer::AuthModule'} = 'Kernel::System::CustomerAuth::HTTPBasicAuth';
+    }
+    1;

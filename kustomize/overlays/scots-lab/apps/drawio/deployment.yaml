@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drawio
+  namespace: drawio
+  labels:
+    app: drawio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: drawio
+  template:
+    metadata:
+      labels:
+        app: drawio
+    spec:
+      containers:
+      - name: drawio
+        # DrawIO uses rolling releases; pinned to digest to prevent unnecessary pulls
+        image: jgraph/drawio@sha256:63ba7ecd6722edc6fba7ee5285c37cf0e133205e5bf20d0a71646e76caddc1e7
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            cpu: 10m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      - name: oauth2-proxy
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        args:
+        - --provider=oidc
+        - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+        - --upstream=http://127.0.0.1:8080
+        - --http-address=0.0.0.0:4180
+        - --email-domain=*
+        - --pass-user-headers=false
+        - --cookie-secure=true
+        - --cookie-name=_oauth2_drawio
+        - --cookie-domain=draw.srbii.com
+        - --redirect-url=https://draw.srbii.com/oauth2/callback
+        - --whitelist-domain=.srbii.com
+        - --skip-provider-button=true
+        - --session-cookie-minimal=true
+        envFrom:
+        - secretRef:
+            name: oauth2-proxy-secret
+        ports:
+        - containerPort: 4180
+          name: proxy
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault

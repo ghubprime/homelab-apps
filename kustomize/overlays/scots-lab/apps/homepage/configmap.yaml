@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homepage-config
+  namespace: homepage
+data:
+  kubernetes.yaml: |
+    mode: cluster
+    gateway: true
+
+  settings.yaml: |
+    title: Scots Lab
+    favicon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/kubernetes.png
+    theme: dark
+    color: slate
+    headerStyle: clean
+    layout:
+      Infrastructure:
+        style: row
+        columns: 3
+        icon: mdi-server-network
+      Applications:
+        style: row
+        columns: 3
+        icon: mdi-application
+      Tools:
+        style: row
+        columns: 3
+        icon: mdi-toolbox
+      Monitoring:
+        style: row
+        columns: 3
+        icon: mdi-chart-line
+
+  bookmarks.yaml: |
+    - Documentation:
+        - Talos Docs:
+            - href: https://www.talos.dev/latest/
+              icon: si-linux
+        - ArgoCD Docs:
+            - href: https://argo-cd.readthedocs.io/
+              icon: si-argo
+        - Rook-Ceph Docs:
+            - href: https://rook.io/docs/rook/latest/
+              icon: mdi-database
+        - Cilium Docs:
+            - href: https://docs.cilium.io/
+              icon: si-cilium
+
+  widgets.yaml: |
+    - greeting:
+        text_size: xl
+        text: Scots Lab 🏴󠁧󠁢󠁳󠁣󠁴󠁿
+
+  services.yaml: |
+    - Infrastructure:
+        - Ceph Dashboard:
+            href: https://cephdash-omni.proxy-us.srbii.com/
+            description: Storage Cluster
+            icon: ceph.png
+        - Grafana:
+            href: https://grafana-omni.proxy-us.srbii.com/
+            description: Observability
+            icon: grafana.png
+        - Hubble UI:
+            href: https://hubbleui-omni.proxy-us.srbii.com/
+            description: Network Observability
+            icon: cilium.png
+        - Uptime Kuma:
+            href: https://uptimekuma-omni.proxy-us.srbii.com/
+            description: Status Monitoring
+            icon: uptime-kuma.png
+        - Omni:
+            href: https://omni.srbii.com/
+            description: Cluster Management
+            icon: mdi-server
+
+    - Applications:
+        - Vaultwarden:
+            href: https://vault.srbii.com
+            description: Password Manager
+            icon: vaultwarden.png
+        - Keycloak:
+            href: https://auth.srbii.com
+            description: Identity Provider
+            icon: keycloak.png
+        - Guacamole:
+            href: https://guacamole-omni.proxy-us.srbii.com/
+            description: Remote Desktop
+            icon: guacamole.png
+        - Ntfy:
+            href: https://ntfy-omni.proxy-us.srbii.com/
+            description: Push Notifications
+            icon: ntfy.png
+
+    - Monitoring:
+        - Umami:
+            href: https://umami-omni.proxy-us.srbii.com/
+            description: Web Analytics
+            icon: umami.png
+        - Retro Gaming:
+            href: https://play.srbii.com
+            description: ROM Manager & Emulator
+            icon: mdi-controller-classic

@@ -1,0 +1,13 @@
+﻿---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: photoprism-oidc-secret
+  namespace: photoprism
+spec:
+  encryptedData:
+    PHOTOPRISM_OIDC_SECRET: AgA8p+PTLYJectrzr8234Wnv/Eh9/7LDjSsqs42cPL95obkyrrAtAxYyxZlR1CYnniR89Kem6KYdC2P+81uNg49Iy9SPxFpgV09u8gBn1fAafr17cHNmZohv8BVQOLRURj5qIHlwTJ9FnXrhPD5taDHYeKead/+Hv3b8owQKePd6KxIGEEXdqxOXG40XU/p6dgFVguMmaEG/Czi0Yzrgr4M5nDjX7AbL/lWY0rXiNo2oTWLIRUjHF+zFrjaCqZau6PEECa1NnQt6YYVdCr/1uPHsLVX8CA2dZY5+VrZSp7qlr+dQsBhYVXtUL0Kxy2vBbdbSTmLmPBa2y3mUS/gzVOuqZW7hDNLCHSxAZXn+o3TCm9rPgDcidd1eDgbytF/c1W2j+A4L2ArmT6hfMt6HVfTFjLz/ktFPhKcbwfW6lVVwrTuFbuR36sVuoXjI8k20UtNXMHXE8i0Sy+3yKPgvJ0BLQXXb1ZLh39tG3hr8o/WqG6Wkjj4tGbKe1gANuWnoDyri81AYwqlgStHZa7vRrzu2rQRHQAD4a7j3xXMr28dmNFEl4Bhkc5npdDpDAjXCbzKrPI+7dL8VeYyr/94UuUieScCWeLeJfnrHCrjdtFRd5hNd4TM/X28JS+KxJP18mN29pi2Uuulh/23jWCpUKqehbM5lDwZLLe7nhlfk82WRuTlq8EwIcU38wXMsUusgxNelOHvzz7TZtPqQEk+D2LWPjjX8dcVBVbhIcqzkzaKhoQ==
+  template:
+    metadata:
+      name: photoprism-oidc-secret
+      namespace: photoprism

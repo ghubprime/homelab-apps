@@ -1,0 +1,44 @@
+# Strategic merge patch to inject oauth2-proxy sidecar into the
+# Helm-rendered changedetection Deployment.
+# This follows the same pattern used by the Znuny deployment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: changedetection-changedetection-io
+  namespace: changedetection
+spec:
+  template:
+    metadata:
+      labels:
+        app: changedetection-app
+    spec:
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+          args:
+            - --provider=oidc
+            - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+            - --upstream=http://127.0.0.1:5000
+            - --http-address=0.0.0.0:4180
+            - --email-domain=*
+            - --pass-user-headers=false
+            - --cookie-secure=true
+            - --cookie-name=_oauth2_changes
+            - --cookie-domain=changes.srbii.com
+            - --redirect-url=https://changes.srbii.com/oauth2/callback
+            - --whitelist-domain=.srbii.com
+            - --skip-provider-button=true
+            - --session-cookie-minimal=true
+          envFrom:
+            - secretRef:
+                name: oauth2-proxy-secret
+          ports:
+            - containerPort: 4180
+              name: proxy
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi

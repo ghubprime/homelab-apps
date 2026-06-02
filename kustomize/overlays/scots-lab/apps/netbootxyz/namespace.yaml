@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: netbootxyz
+  labels:
+    name: netbootxyz
+    pod-security.kubernetes.io/enforce: privileged

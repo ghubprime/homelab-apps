@@ -1,0 +1,194 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outline
+  namespace: outline
+  labels:
+    app: outline
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: outline
+  template:
+    metadata:
+      labels:
+        app: outline
+    spec:
+      priorityClassName: homelab-data
+      containers:
+        - name: outline
+          image: outlinewiki/outline:1.7.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: URL
+              value: "https://kb.srbii.com"
+            - name: PORT
+              value: "3000"
+            - name: FORCE_HTTPS
+              value: "false"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: DATABASE_URL
+            - name: DATABASE_CONNECTION_POOL_MIN
+              value: "1"
+            - name: DATABASE_CONNECTION_POOL_MAX
+              value: "5"
+            - name: REDIS_URL
+              value: "redis://127.0.0.1:6379"
+            - name: PGSSLMODE
+              value: "disable"
+            - name: FILE_STORAGE
+              value: "s3"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: MINIO_ROOT_PASSWORD
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: AWS_S3_UPLOAD_BUCKET_NAME
+              value: "outline-data"
+            - name: AWS_S3_UPLOAD_BUCKET_URL
+              value: "http://127.0.0.1:9000"
+            - name: AWS_S3_FORCE_PATH_STYLE
+              value: "true"
+            - name: AWS_S3_ACL
+              value: "private"
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: SECRET_KEY
+            - name: UTILS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: UTILS_SECRET
+            # Native OIDC configuration for Keycloak
+            - name: OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: OIDC_CLIENT_ID
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: OIDC_CLIENT_SECRET
+            - name: OIDC_AUTH_URI
+              value: "https://auth.srbii.com/realms/homelab/protocol/openid-connect/auth"
+            - name: OIDC_TOKEN_URI
+              value: "https://auth.srbii.com/realms/homelab/protocol/openid-connect/token"
+            - name: OIDC_USERINFO_URI
+              value: "https://auth.srbii.com/realms/homelab/protocol/openid-connect/userinfo"
+            - name: OIDC_LOGOUT_URI
+              value: "https://auth.srbii.com/realms/homelab/protocol/openid-connect/logout"
+            - name: OIDC_DISPLAY_NAME
+              value: "Keycloak"
+            - name: OIDC_USERNAME_CLAIM
+              value: "preferred_username"
+            - name: OIDC_SCOPES
+              value: "openid profile email"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 600Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+
+        - name: postgres
+          image: postgres:16-bookworm
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_DB
+              value: "outline"
+            - name: POSTGRES_USER
+              value: "outline"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+        - name: redis
+          image: redis:7-bookworm
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 6379
+              name: redis
+          command: ["redis-server", "--appendonly", "yes"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+        - name: minio
+          image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+          imagePullPolicy: IfNotPresent
+          args: ["server", "/data"]
+          ports:
+            - containerPort: 9000
+              name: s3
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secret
+                  key: MINIO_ROOT_PASSWORD
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+
+
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: outline-postgres-data
+        - name: minio-data
+          persistentVolumeClaim:
+            claimName: outline-minio-data

@@ -1,0 +1,36 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: drawio-isolation-baseline
+  namespace: drawio
+spec:
+  endpointSelector: {}  # Selects all pods in the drawio namespace
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kgateway-system
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-prometheus-system
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: uptime-kuma
+        
+  egress:
+  # Inter-namespace allows
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: drawio
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+  
+  # Allow egress to world for Keycloak OIDC validation
+  - toEntities:
+    - world
+    - host
+  
+  # We should also allow egress to external API servers if needed
+  - toCIDR:
+    - 0.0.0.0/0

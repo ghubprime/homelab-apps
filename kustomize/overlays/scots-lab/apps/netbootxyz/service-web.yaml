@@ -1,0 +1,14 @@
+# Separate service for the WebUI exposed via Cloudflare Tunnel.
+# The main netbootxyz service retains TFTP/assets ports for LAN PXE clients.
+apiVersion: v1
+kind: Service
+metadata:
+  name: netbootxyz-web
+  namespace: netbootxyz
+spec:
+  selector:
+    app.kubernetes.io/name: netbootxyz
+  ports:
+    - name: proxy
+      port: 4180
+      targetPort: 4180

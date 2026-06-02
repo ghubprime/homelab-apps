@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: znuny
+resources:
+  - ../../../../base/apps/znuny/
+  - mariadb-statefulset.yaml
+  - mariadb-service.yaml
+  - apache-oidc-config.yaml
+  - sealed-oauth2-proxy-secret.yaml
+  - znuny-auth-config.yaml
+  - znuny-deployment.yaml
+  - znuny-service.yaml
+  - httproute.yaml
+  - sealed-znuny-db-secret.yaml

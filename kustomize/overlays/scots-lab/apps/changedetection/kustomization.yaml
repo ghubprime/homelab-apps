@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: changedetection
+resources:
+  - ../../../../base/apps/changedetection/
+  - httproute.yaml
+  - service.yaml
+  - sealed-oauth2-proxy-secret.yaml
+helmCharts:
+  - name: changedetection-io
+    repo: https://charts.gabe565.com
+    version: 0.12.0
+    releaseName: changedetection
+    namespace: changedetection
+    valuesFile: ../../../../../helm/overlays/scots-lab/apps/changedetection/values-scots-lab.yaml
+patches:
+  - path: patch-oauth2-proxy.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: changedetection-changedetection-io

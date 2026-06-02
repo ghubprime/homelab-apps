@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: it-tools
+  namespace: it-tools
+  labels:
+    app: it-tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: it-tools
+  template:
+    metadata:
+      labels:
+        app: it-tools
+    spec:
+      containers:
+      - name: it-tools
+        image: corentinth/it-tools:2024.5.13-a0bc346
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        env:
+        - name: PORT
+          value: '8080'
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
+      - name: oauth2-proxy
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        args:
+        - --provider=oidc
+        - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+        - --upstream=http://127.0.0.1:8080
+        - --http-address=0.0.0.0:4180
+        - --email-domain=*
+        - --pass-user-headers=false
+        - --cookie-secure=true
+        - --cookie-name=_oauth2_ittools
+        - --cookie-domain=tools.srbii.com
+        - --redirect-url=https://tools.srbii.com/oauth2/callback
+        - --whitelist-domain=.srbii.com
+        - --skip-provider-button=true
+        - --session-cookie-minimal=true
+        envFrom:
+        - secretRef:
+            name: oauth2-proxy-secret
+        ports:
+        - containerPort: 4180
+          name: proxy
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: it-tools-nginx-config
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run
+        emptyDir: {}

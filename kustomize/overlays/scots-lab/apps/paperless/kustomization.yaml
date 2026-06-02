@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: paperless
+resources:
+  - ../../../../base/apps/paperless/
+  - httproute.yaml
+  - sealed-paperless-oidc.yaml
+helmCharts:
+  - name: paperless-ngx
+    repo: https://charts.gabe565.com
+    version: 0.24.1
+    releaseName: paperless
+    namespace: paperless
+    valuesFile: ../../../../../helm/overlays/scots-lab/apps/paperless/values-scots-lab.yaml

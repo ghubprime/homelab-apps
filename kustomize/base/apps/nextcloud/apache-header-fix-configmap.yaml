@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nextcloud-apache-header-fix
+data:
+  cloudflare-headers.conf: |
+    # Increase header field size limits for Cloudflare Tunnel JWT/Access headers
+    # Default is 8190 bytes which is exceeded by Cloudflare Access tokens
+    # See agents.md Rule #26: oauth2-proxy Header Bloat Limits
+    LimitRequestFieldSize 32768
+    LimitRequestLine 32768

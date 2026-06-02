@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actual-budget
+  namespace: actual-budget
+  labels:
+    app: actual-budget
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: actual-budget
+  template:
+    metadata:
+      labels:
+        app: actual-budget
+    spec:
+      priorityClassName: homelab-data
+      containers:
+        - name: actual-budget
+          # Pinned from :latest for Renovate tracking and rollback safety
+          image: actualbudget/actual-server:26.5.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5006
+              name: http
+          env:
+            # Native OpenID Connect via Keycloak
+            - name: ACTUAL_OPENID_DISCOVERY_URL
+              value: "https://auth.srbii.com/realms/homelab/.well-known/openid-configuration"
+            - name: ACTUAL_OPENID_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-secret
+                  key: OAUTH2_PROXY_CLIENT_ID
+            - name: ACTUAL_OPENID_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-secret
+                  key: OAUTH2_PROXY_CLIENT_SECRET
+            - name: ACTUAL_OPENID_SERVER_HOSTNAME
+              value: "https://budget.srbii.com"
+            - name: ACTUAL_LOGIN_METHOD
+              value: "openid"
+            - name: ACTUAL_USER_CREATION_MODE
+              value: "login"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: actual-budget-data

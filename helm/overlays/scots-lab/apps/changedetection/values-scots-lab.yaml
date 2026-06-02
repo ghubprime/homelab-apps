@@ -1,0 +1,68 @@
+# Changedetection.io values for scots-lab environment
+# Website change monitoring with Browserless JS evaluation sidecar
+
+image:
+  repository: ghcr.io/dgtlmoon/changedetection.io
+  tag: "0.45.17"
+  pullPolicy: IfNotPresent
+
+env:
+  TZ: "UTC"
+  # Base URL for the application (used for notification links)
+  BASE_URL: "https://changes.srbii.com"
+  # Playwright/Browserless connection - sidecar on localhost
+  PLAYWRIGHT_DRIVER_URL: "ws://localhost:3000/?stealth=1&--disable-web-security=true"
+
+# Service configuration
+service:
+  main:
+    ports:
+      http:
+        port: 5000
+
+# Ingress disabled — routed via Gateway API HTTPRoute + Cloudflare Tunnel
+ingress:
+  main:
+    enabled: false
+
+# Persistent storage for change history and datastore
+# Must use block storage (RWO) — SQLite-backed state
+persistence:
+  data:
+    enabled: true
+    storageClass: "ceph-block"
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    retain: true
+
+# Browserless Chrome sidecar for JS-rendered page monitoring
+browserless:
+  enabled: true
+  image:
+    repository: browserless/chrome
+    # Pinned from :latest to digest to prevent unnecessary pulls
+    tag: "latest@sha256:57d19e414d9fe4ae9d2ab12ba768c97f38d51246c5b31af55a009205c136012f"
+    pullPolicy: IfNotPresent
+  env:
+    ENABLE_DEBUGGER: "false"
+    DEFAULT_BLOCK_ADS: "true"
+    DEFAULT_STEALTH: "true"
+    # Rule 23: Large integers must be double-quoted strings
+    CONNECTION_TIMEOUT: "300000"
+    MAX_CONCURRENT_SESSIONS: "2"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# Resource limits for homelab
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 512Mi

@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vert
+  namespace: vert
+  labels:
+    app: vert
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vert
+  template:
+    metadata:
+      labels:
+        app: vert
+    spec:
+      containers:
+      - name: vert
+        # Vert uses SHA-based tags only; pinned to digest to prevent unnecessary pulls
+        image: ghcr.io/vert-sh/vert@sha256:11c2972ea336883acbfd46453332ef7ce677c3850dbf64b8d4283ec72c8bcb7b
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        # Note: VERT NGINX listens on port 80 (default). PORT env var is ignored
+        # because the read-only filesystem prevents NGINX init scripts from modifying
+        # the default.conf. oauth2-proxy upstream must target port 80.
+        volumeMounts:
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
+      - name: oauth2-proxy
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        args:
+        - --provider=oidc
+        - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+        - --upstream=http://127.0.0.1:80
+        - --http-address=0.0.0.0:4180
+        - --email-domain=*
+        - --pass-user-headers=false
+        - --cookie-secure=true
+        - --cookie-name=_oauth2_vert
+        - --cookie-domain=vert.srbii.com
+        - --redirect-url=https://vert.srbii.com/oauth2/callback
+        - --whitelist-domain=.srbii.com
+        - --skip-provider-button=true
+        - --session-cookie-minimal=true
+        envFrom:
+        - secretRef:
+            name: oauth2-proxy-secret
+        ports:
+        - containerPort: 4180
+          name: proxy
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run
+        emptyDir: {}

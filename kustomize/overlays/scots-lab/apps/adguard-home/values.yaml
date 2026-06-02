@@ -1,0 +1,60 @@
+# Note on Rule 22: We will use the official adguard/adguardhome image, which does 
+# not use s6-overlay, thus bypassing the UID 0 limitation. Standard best-practices apply.
+controllers:
+  main:
+    annotations:
+      reloader.stakater.com/auto: "true"
+    pod:
+      # DNS server — network-wide outage if evicted
+      priorityClassName: homelab-critical
+    containers:
+      main:
+        image:
+          repository: adguard/adguardhome
+          tag: v0.107.74
+          pullPolicy: IfNotPresent
+        env:
+          TZ: "America/Los_Angeles"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+service:
+  main:
+    controller: main
+    type: ClusterIP
+    ports:
+      http:
+        port: 80
+  dns:
+    enabled: true
+    controller: main
+    type: LoadBalancer
+    annotations:
+      io.cilium/ippool: "homelab-pool"
+    loadBalancerIP: "192.168.8.53"
+    externalTrafficPolicy: Cluster
+    ports:
+      dns-tcp:
+        port: 53
+        protocol: TCP
+        targetPort: 53
+      dns-udp:
+        port: 53
+        protocol: UDP
+        targetPort: 53
+
+persistence:
+  config:
+    enabled: true
+    existingClaim: adguard-config-pvc
+    globalMounts:
+      - path: /opt/adguardhome/conf
+  data:
+    enabled: true
+    existingClaim: adguard-data-pvc
+    globalMounts:
+      - path: /opt/adguardhome/work

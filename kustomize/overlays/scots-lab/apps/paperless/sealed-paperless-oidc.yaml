@@ -1,0 +1,13 @@
+﻿---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: paperless-oidc-secret
+  namespace: paperless
+spec:
+  encryptedData:
+    providers.json: AgBIjmUan82qhe0slX4L2X8a5k5weEcmV+P9LLWz4/0H4qYClcnCduxe9HhjaiASU46ASMqcfrBAgrlOiIYD5Qe3jDO0uc4/BRQhVnFTypC86+hHe/6PJIdo0oSXmrEwuDKhKgjQBhvzv9tM80Efx+L9zM0el49zBIerB5F+10rpwW+MPeoWYos2Q8c5V0CWZK2Ngw4A1qasowgLyntki+6iPYB7tIrNQjNJ4FoVvetoM7FG0iY1grlfLc3u/RVdtBSFxCqpXjNzSgjoiD/PTzxxgEsnDD5kZIrIbgSOxqKj/feSjO+WnAg3dNHmhxrKXb8EptY2Uin4pBOnwS82IVfYMdheh72KlzCBNm8TGETZ0/MfPVj3oE5/eOEvqT668u8ZjhpOpUdL52OhTWV5dUX1VIZoR+44BABv4Wz2tMmUtD96QbuKUgAh6X+zPktSTe2NOVCiVRbLWkgKGJGA/HGCcVtZWMsGTW0bkIHUe9kgk2jPQdBv98k0mQ/HFsks/JzjEza+g8I2+XlqlPCa9a0F1CGZRm6htHDkFmOoSKeMLzaGi1dgdFXWpGyrvigTwuRjAF1gbOvHAIkneaONN8BkZUo6BeSmWUr3e1XMGxXsm1odyEoCnvWZjJ9lmOrXQQx+o4+5E2NWYEOnN6ZK5P01DZ8HBHZZ7QQSjaOFv2guTaBPjxeKl83ruDS4EpxYr+tvubzbmewSCREOZxAw5GTJMOEYEtXQBxy9ojuQkVG/u2osjh46WoWFwDlHV6nSyrwOzkV0do34o527RAASwOtKRf+ltq8HIaVOXvTSXeV+YxJS4ZzJ7OcE5M6EKDQuZktv91LBa+eqTa/BwzABZWqqMduXz2Y6ku7c9J3pt4jkQSUhYu/gH6o+5lMslkotnHiz2kQlp+AtnsKCdVFQJkb+xIgz2z0EMqt3e0+u9rUc+yo7P7J2F9dyhE/QT2SXki9d+llfejXXcLg9l54NRBCbXOyagV8XWfwV0gUSVO86S6gtoa0ELOCs+sJi6D5gEzGQ0HeM4fYueB+jsYUUdHgM+1+5OA==
+  template:
+    metadata:
+      name: paperless-oidc-secret
+      namespace: paperless

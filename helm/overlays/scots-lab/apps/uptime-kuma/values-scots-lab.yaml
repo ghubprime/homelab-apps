@@ -1,0 +1,44 @@
+# Uptime Kuma values for scots-lab environment
+# Lightweight uptime monitoring dashboard with SQLite on Ceph block storage
+
+image:
+  repository: louislam/uptime-kuma
+  # Pinned from rolling :1 tag to exact digest to prevent unnecessary pulls
+  tag: "1@sha256:3d632903e6af34139a37f18055c4f1bfd9b7205ae1138f1e5e8940ddc1d176f9"
+  pullPolicy: IfNotPresent
+
+# Persistent storage for SQLite database
+# Must use block storage (RWO) — NFS will corrupt SQLite file locks
+volume:
+  enabled: true
+  size: 2Gi
+  storageClassName: ceph-block
+
+# Ingress disabled — access via port-forward or Omni proxy
+ingress:
+  enabled: false
+
+# Service configuration — exposed via Omni workload proxy (Rule #18: plain HTTP, no SSL)
+service:
+  type: ClusterIP
+  port: 3001
+  annotations:
+    omni-kube-service-exposer.sidero.dev/port: "50082"
+    omni-kube-service-exposer.sidero.dev/label: "Uptime Kuma"
+    omni-kube-service-exposer.sidero.dev/prefix: "uptimekuma"
+
+# Resource limits for homelab
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Recreate strategy required — RWO PVC cannot multi-attach across nodes during RollingUpdate
+strategy:
+  type: Recreate
+
+# Data-tier eviction priority — PVC-backed SQLite must survive over stateless tools
+priorityClassName: homelab-data

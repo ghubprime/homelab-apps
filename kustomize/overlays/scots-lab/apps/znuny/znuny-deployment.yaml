@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: znuny-app
+  namespace: znuny
+  labels:
+    app: znuny-app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: znuny-app
+  template:
+    metadata:
+      labels:
+        app: znuny-app
+    spec:
+      # Init container waits for MariaDB readiness before starting Znuny
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for MariaDB to be ready..."
+              until nc -z znuny-mariadb 3306; do
+                echo "MariaDB not ready yet, retrying in 3s..."
+                sleep 3
+              done
+              echo "MariaDB is ready!"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+          args:
+            - --provider=oidc
+            - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
+            - --upstream=http://127.0.0.1:80
+            - --http-address=0.0.0.0:4180
+            - --email-domain=*
+            - --pass-user-headers=true
+            - --cookie-secure=true
+            - --cookie-name=_oauth2_znuny
+            - --cookie-domain=tickets.srbii.com
+          envFrom:
+            - secretRef:
+                name: oauth2-proxy-secret
+          ports:
+            - containerPort: 4180
+              name: proxy
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+
+        - name: znuny
+          image: docker.io/andreynsafonov/znuny:7.2.3
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              cp /tmp/znuny-auth-config/ZZZA_OIDC.pm /opt/znuny/Kernel/Config/Files/ZZZA_OIDC.pm
+              chown znuny:znuny /opt/znuny/Kernel/Config/Files/ZZZA_OIDC.pm
+              sed -i 's/^Listen 80$/Listen 127.0.0.1:80/' /etc/apache2/ports.conf
+              exec /usr/local/bin/docker-entrypoint.sh /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+          # Intentionally omitted containerPort: 80 to prevent direct access bypass
+          env:
+            - name: TZ
+              value: "UTC"
+            - name: ZNUNY_DB_TYPE
+              value: "mysql"
+            - name: ZNUNY_DB_HOST
+              value: "znuny-mariadb"
+            - name: ZNUNY_DB_NAME
+              value: "znuny"
+            - name: ZNUNY_DB_USER
+              value: "znuny"
+            - name: ZNUNY_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: znuny-db-secret
+                  key: MYSQL_PASSWORD
+            - name: ZNUNY_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: znuny-db-secret
+                  key: ZNUNY_ROOT_PASSWORD
+            - name: ZNUNY_FQDN
+              value: "tickets.srbii.com"
+            - name: ZNUNY_AUTO_INSTALL
+              value: "true"
+            - name: ZNUNY_ORGANIZATION
+              value: "Scots Lab"
+          volumeMounts:
+            - name: apache-oidc-config
+              mountPath: /etc/apache2/conf-enabled/oidc-header.conf
+              subPath: oidc-header.conf
+            - name: znuny-auth-config
+              mountPath: /tmp/znuny-auth-config
+          readinessProbe:
+            exec:
+              command: ["curl", "-f", "-s", "http://127.0.0.1:80/"]
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 8
+          livenessProbe:
+            exec:
+              command: ["curl", "-f", "-s", "http://127.0.0.1:80/"]
+            initialDelaySeconds: 600
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+      volumes:
+        - name: apache-oidc-config
+          configMap:
+            name: apache-oidc-config
+            defaultMode: 0644
+        - name: znuny-auth-config
+          configMap:
+            name: znuny-auth-config
+            defaultMode: 0644

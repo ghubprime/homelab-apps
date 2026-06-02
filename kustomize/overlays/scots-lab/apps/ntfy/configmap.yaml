@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ntfy-config
+  namespace: ntfy
+data:
+  server.yml: |
+    base-url: "https://ntfy-omni.proxy-us.srbii.com"
+    upstream-base-url: "https://ntfy.sh"
+    cache-file: "/var/lib/ntfy/cache.db"
+    attachment-cache-dir: "/var/lib/ntfy/attachments"
+    behind-proxy: true

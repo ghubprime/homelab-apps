@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: changedetection-app
+  namespace: changedetection
+  labels:
+    app: changedetection-app
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4180
+      targetPort: 4180
+      protocol: TCP
+      name: http
+  selector:
+    app: changedetection-app

@@ -1,0 +1,27 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: rackula
+  namespace: rackula
+  annotations:
+    gethomepage.dev/enabled: 'true'
+    gethomepage.dev/name: Rackula
+    gethomepage.dev/group: Tools
+    gethomepage.dev/description: Rack Planner
+    gethomepage.dev/icon: mdi-server
+    gethomepage.dev/href: https://rack.srbii.com
+    gethomepage.dev/weight: '44'
+spec:
+  parentRefs:
+  - name: kgateway-http
+    namespace: kgateway-system
+  hostnames:
+  - rack.srbii.com
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: rackula
+      port: 4180

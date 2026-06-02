@@ -1,0 +1,89 @@
+env:
+  TZ: "UTC"
+  PAPERLESS_URL: "https://docs.srbii.com"
+  PAPERLESS_ENABLE_ALLAUTH: "true"
+  PAPERLESS_APPS: "allauth.socialaccount.providers.openid_connect"
+  PAPERLESS_SOCIAL_AUTO_SIGNUP: "true"
+  PAPERLESS_DISABLE_REGULAR_LOGIN: "false"
+  PAPERLESS_SOCIALACCOUNT_PROVIDERS:
+    valueFrom:
+      secretKeyRef:
+        name: paperless-oidc-secret
+        key: providers.json
+
+global:
+  security:
+    allowInsecureImages: true
+
+ingress:
+  main:
+    enabled: false
+
+persistence:
+  data:
+    enabled: true
+    storageClass: "ceph-block"
+    accessMode: ReadWriteOnce
+    size: 2Gi
+    retain: true
+  media:
+    enabled: true
+    storageClass: "ceph-block"
+    accessMode: ReadWriteOnce
+    size: 15Gi
+    retain: true
+  export:
+    enabled: true
+    storageClass: "ceph-block"
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    retain: true
+  consume:
+    enabled: true
+    storageClass: "ceph-block"
+    accessMode: ReadWriteOnce
+    size: 4Gi
+    retain: true
+
+postgresql:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: 16.2.0-debian-11-r1
+  auth:
+    database: paperless
+    postgresPassword: changeme
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "ceph-block"
+      size: 10Gi
+
+redis:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/redis
+    tag: 7.4.2-debian-12-r0
+  auth:
+    enabled: true
+    password: changeme
+  master:
+    persistence:
+      enabled: true
+      storageClass: "ceph-block"
+      size: 5Gi
+  replica:
+    replicaCount: 0
+
+# Right-size the paperless-ngx worker to prevent memory starvation.
+# CPU limit is intentionally omitted to allow rapid burst processing during OCR ingestion,
+# but memory is strictly capped to prevent long-term memory leaks.
+resources:
+  requests:
+    cpu: 100m
+    memory: 768Mi
+  limits:
+    memory: 1Gi
+

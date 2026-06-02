@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: romm
+  namespace: romm
+  labels:
+    app: romm
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: romm
+  template:
+    metadata:
+      labels:
+        app: romm
+    spec:
+      enableServiceLinks: false
+      priorityClassName: homelab-data
+      containers:
+        - name: romm
+          image: rommapp/romm:4.8.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DB_HOST
+              value: "127.0.0.1"
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_NAME
+              value: "romm"
+            - name: ROMM_BASE_PATH
+              value: "/"
+          envFrom:
+            - secretRef:
+                name: romm-secret
+          volumeMounts:
+            - name: library
+              mountPath: /romm/library
+            - name: resources
+              mountPath: /romm/resources
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+
+        - name: mariadb
+          image: mariadb:11-jammy
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3306
+              name: mariadb
+          env:
+            - name: MYSQL_DATABASE
+              value: "romm"
+            - name: MYSQL_USER
+              value: "romm"
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: romm-secret
+                  key: DB_PASSWD
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: romm-secret
+                  key: DB_PASSWD
+          volumeMounts:
+            - name: mariadb-data
+              mountPath: /var/lib/mysql
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+
+      volumes:
+        - name: library
+          persistentVolumeClaim:
+            claimName: romm-library
+        - name: resources
+          persistentVolumeClaim:
+            claimName: romm-resources
+        - name: mariadb-data
+          persistentVolumeClaim:
+            claimName: romm-mariadb-data

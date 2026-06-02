@@ -1,0 +1,13 @@
+apiVersion: builtin
+kind: HelmChartInflationGenerator
+metadata:
+  name: uptime-kuma
+name: uptime-kuma
+repo: https://helm.irsigler.cloud
+chartHome: ../../../../../charts
+releaseName: uptime-kuma
+namespace: uptime-kuma
+includeCRDs: false
+skipHooks: false
+version: 4.0.0
+valuesFile: values.yaml

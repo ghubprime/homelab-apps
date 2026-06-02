@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - cronjob-r2-mirror.yaml
+  - cronjob-retention-cleanup.yaml
+  # NOTE: cronjob-pvc-backup-template.yaml is a TEMPLATE, not a deployed resource.
+  # Tier 3B per-app CronJobs are deployed directly in each app's namespace.
+  # See cronjob-pvc-backup-template.yaml for instructions.
+  #
+  # The rclone-config SealedSecret must be created before deployment:
+  #   1. Configure rclone locally with 'r2' and 'gdrive' remotes
+  #   2. Seal the config: kubeseal --format yaml --namespace gdrive-backup < rclone-secret.yaml
+  #   3. Save as sealed-rclone-secret.yaml and add to this resources list
+  #
+  # --- Uncomment after creating the SealedSecret ---
+  - sealed-rclone-secret.yaml
