@@ -20,7 +20,7 @@ spec:
       priorityClassName: homelab-data
       containers:
       - name: onetimesecret
-        image: onetimesecret/onetimesecret:v0.24.7
+        image: onetimesecret/onetimesecret:v0.25.5
         ports:
         - containerPort: 3000
           name: http
