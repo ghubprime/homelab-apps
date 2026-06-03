@@ -20,7 +20,7 @@ spec:
       priorityClassName: homelab-data
       containers:
         - name: linkwarden
-          image: ghcr.io/linkwarden/linkwarden:v2.9.3
+          image: ghcr.io/linkwarden/linkwarden:v2.14.1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

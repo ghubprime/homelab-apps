@@ -20,7 +20,7 @@ spec:
           image: postgres:16-alpine
           command: ['sh', '-c', 'until pg_isready -h guacamole-postgresql -p 5432 -U guacamole; do echo waiting for db; sleep 2; done;']
         - name: generate-schema
-          image: guacamole/guacamole:1.5.5
+          image: guacamole/guacamole:1.6.0
           command: ['sh', '-c']
           args:
             - |
@@ -60,7 +60,7 @@ spec:
               mountPath: /initdb-dir
       containers:
         - name: guacamole
-          image: guacamole/guacamole:1.5.5
+          image: guacamole/guacamole:1.6.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
