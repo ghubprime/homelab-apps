@@ -53,7 +53,7 @@ spec:
         app: rackula
     spec:
       containers:
-      - image: ghcr.io/rackulalives/rackula:0.9.5
+      - image: ghcr.io/rackulalives/rackula:0.10.0
         imagePullPolicy: IfNotPresent
         name: rackula
         ports:
