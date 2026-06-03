@@ -67,7 +67,7 @@ spec:
         envFrom:
         - secretRef:
             name: onetimesecret-secret
-        image: onetimesecret/onetimesecret:v0.24.7
+        image: onetimesecret/onetimesecret:v0.25.5
         name: onetimesecret
         ports:
         - containerPort: 3000
