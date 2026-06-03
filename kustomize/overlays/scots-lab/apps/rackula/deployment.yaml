@@ -20,7 +20,7 @@ spec:
       containers:
       - name: rackula
         # Pinned from :latest for Renovate tracking and rollback safety
-        image: ghcr.io/rackulalives/rackula:0.9.5
+        image: ghcr.io/rackulalives/rackula:0.10.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
