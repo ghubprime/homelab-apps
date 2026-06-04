@@ -67,7 +67,7 @@ spec:
               memory: 128Mi
 
         - name: znuny
-          image: docker.io/andreynsafonov/znuny:7.2.3
+          image: docker.io/andreynsafonov/znuny:7.3.3
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-c"]
           args:
