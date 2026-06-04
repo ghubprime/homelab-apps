@@ -9,7 +9,7 @@ This repository is part of a three-repo GitOps model:
 | Repository | Role |
 |------------|------|
 | [`k8s-cluster`](https://github.com/ghubprime/k8s-cluster) | **Platform** — Omni template, bootstrap chain, ArgoCD, core infrastructure, monitoring, security |
-| **`homelab-apps`** (this repo) | **Tenant** — All self-hosted applications (28 apps) |
+| **`homelab-apps`** (this repo) | **Tenant** — All self-hosted applications (26 apps) |
 | [`omni-infra`](https://github.com/ghubprime/omni-infra) | Machine-specific network patches and machine class definitions |
 
 ## How It Works
@@ -41,7 +41,7 @@ homelab-apps/
 | Category | Apps |
 |----------|------|
 | **Stateless** | drawio, it-tools, vert, openspeedtest, stirling-pdf, homepage |
-| **Light State** | rackula, changedetection, healthchecks, homebox, actual-budget, ntfy, uptime-kuma, adguard-home, netbootxyz, onetimesecret, gdrive-backup |
+| **Light State** | rackula, changedetection, healthchecks, homebox, ntfy, uptime-kuma, adguard-home, netbootxyz, onetimesecret, gdrive-backup |
 | **Heavy State** | nextcloud, paperless, photoprism, immich, outline, linkwarden, romm, guacamole, znuny, umami |
 
 ## CI Pipeline
@@ -49,7 +49,7 @@ homelab-apps/
 The GitHub Actions workflow (`generate.yml`) installs Helm, Kustomize, and kubeconform on Ubuntu, then:
 1. Runs `generate-manifests.sh --force` to render all overlays
 2. Validates every `_bootstrap.yaml` is non-empty (>10 bytes) to prevent 0-byte deletion traps
-3. Runs `kubeconform` schema validation against K8s v1.35.2
+3. Runs `kubeconform` schema validation against K8s v1.36.1
 4. Auto-commits generated manifests with `[skip ci]` to prevent infinite loops
 
 > ⚠️ **Do NOT run `generate-manifests.sh` natively on Windows** — Kustomize's Helm inflation has a known bug that silently deletes manifest directories. Always push to GitHub and let CI handle generation.
