@@ -111,10 +111,11 @@ spec:
         - --whitelist-domain=.srbii.com
         - --skip-provider-button=true
         - --session-cookie-minimal=true
+        - --trusted-proxy-ip=10.244.0.0/16
         envFrom:
         - secretRef:
             name: oauth2-proxy-secret
-        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.2
         name: oauth2-proxy
         ports:
         - containerPort: 4180
