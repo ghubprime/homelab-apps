@@ -37,7 +37,7 @@ spec:
             drop:
             - ALL
       - name: oauth2-proxy
-        image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+        image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.2
         args:
         - --provider=oidc
         - --oidc-issuer-url=https://auth.srbii.com/realms/homelab
@@ -52,6 +52,7 @@ spec:
         - --whitelist-domain=.srbii.com
         - --skip-provider-button=true
         - --session-cookie-minimal=true
+        - --trusted-proxy-ip=10.244.0.0/16
         envFrom:
         - secretRef:
             name: oauth2-proxy-secret
