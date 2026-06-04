@@ -38,7 +38,7 @@ spec:
         app: vert
     spec:
       containers:
-      - image: ghcr.io/vert-sh/vert@sha256:11c2972ea336883acbfd46453332ef7ce677c3850dbf64b8d4283ec72c8bcb7b
+      - image: ghcr.io/vert-sh/vert:sha-ed2baae
         imagePullPolicy: IfNotPresent
         name: vert
         ports:
