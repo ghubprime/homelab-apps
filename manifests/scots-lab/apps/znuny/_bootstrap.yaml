@@ -144,7 +144,7 @@ spec:
           value: "true"
         - name: ZNUNY_ORGANIZATION
           value: Scots Lab
-        image: docker.io/andreynsafonov/znuny:7.2.3
+        image: docker.io/andreynsafonov/znuny:7.3.3
         imagePullPolicy: IfNotPresent
         livenessProbe:
           exec:
