@@ -18,6 +18,9 @@ spec:
         app: outline
     spec:
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: outline
           image: outlinewiki/outline:1.7.1

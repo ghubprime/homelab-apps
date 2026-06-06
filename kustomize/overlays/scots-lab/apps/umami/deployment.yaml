@@ -18,6 +18,9 @@ spec:
         app: umami
     spec:
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: umami
           # Pinned from :postgresql-latest to prevent unnecessary pulls

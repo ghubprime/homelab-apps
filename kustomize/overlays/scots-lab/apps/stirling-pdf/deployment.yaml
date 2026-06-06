@@ -15,6 +15,9 @@ spec:
       labels:
         app: stirling-pdf
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: stirling-pdf
           # Pinned from :latest for Renovate tracking and rollback safety

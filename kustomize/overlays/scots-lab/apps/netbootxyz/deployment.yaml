@@ -19,6 +19,9 @@ spec:
       annotations:
         k8s.v1.cni.cncf.io/networks: netbootxyz-macvlan
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: netbootxyz
           image: linuxserver/netbootxyz:0.7.6

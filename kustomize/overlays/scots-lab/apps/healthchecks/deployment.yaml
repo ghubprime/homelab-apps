@@ -18,6 +18,9 @@ spec:
         app: healthchecks
     spec:
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: healthchecks
           # LinuxServer uses rolling ls-xxx tags; pinned to digest to prevent unnecessary pulls

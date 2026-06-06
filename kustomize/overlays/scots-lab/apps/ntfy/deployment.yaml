@@ -18,6 +18,9 @@ spec:
         app: ntfy
     spec:
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ntfy
           # Pinned from :latest for Renovate tracking and rollback safety

@@ -19,6 +19,9 @@ spec:
     spec:
       enableServiceLinks: false
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: romm
           image: rommapp/romm:4.8.1

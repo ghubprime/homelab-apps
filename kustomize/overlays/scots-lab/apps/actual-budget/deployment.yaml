@@ -18,6 +18,9 @@ spec:
         app: actual-budget
     spec:
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: actual-budget
           # Pinned from :latest for Renovate tracking and rollback safety

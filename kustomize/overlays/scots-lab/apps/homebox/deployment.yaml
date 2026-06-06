@@ -18,6 +18,9 @@ spec:
         app: homebox
     spec:
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: homebox
           image: ghcr.io/sysadminsmedia/homebox:latest
