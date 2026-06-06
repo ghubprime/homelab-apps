@@ -5,6 +5,7 @@ resources:
   - ../../../../base/apps/paperless/
   - httproute.yaml
   - sealed-paperless-oidc.yaml
+  - paperless-cnp.yaml
 helmCharts:
   - name: paperless-ngx
     repo: https://charts.gabe565.com

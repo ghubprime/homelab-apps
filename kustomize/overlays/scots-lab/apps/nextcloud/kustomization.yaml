@@ -5,6 +5,7 @@ resources:
   - ../../../../base/apps/nextcloud/
   - httproute.yaml
   - nextcloud-auth-secret-patch.yaml
+  - nextcloud-cnp.yaml
 helmCharts:
 - name: nextcloud
   repo: https://nextcloud.github.io/helm/
