@@ -1247,6 +1247,37 @@ spec:
       name: paperless-oidc-secret
       namespace: paperless
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: paperless-isolation-baseline
+  namespace: paperless
+spec:
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: paperless
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+  - toEntities:
+    - world
+    - host
+  - toCIDR:
+    - 0.0.0.0/0
+  endpointSelector: {}
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kgateway-system
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-prometheus-system
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: uptime-kuma
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
