@@ -142,6 +142,9 @@ spec:
           name: mariadb-data
       enableServiceLinks: false
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
       - name: library
         persistentVolumeClaim:

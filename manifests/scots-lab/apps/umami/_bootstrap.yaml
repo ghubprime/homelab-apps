@@ -104,6 +104,9 @@ spec:
         - mountPath: /var/lib/postgresql/data
           name: postgres-data
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
       - name: postgres-data
         persistentVolumeClaim:

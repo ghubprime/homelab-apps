@@ -156,6 +156,9 @@ spec:
           requests:
             cpu: 10m
             memory: 32Mi
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
       - name: config
         persistentVolumeClaim:

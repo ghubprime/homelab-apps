@@ -92,6 +92,9 @@ spec:
           name: ntfy-config
           subPath: server.yml
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
       - name: ntfy-data
         persistentVolumeClaim:

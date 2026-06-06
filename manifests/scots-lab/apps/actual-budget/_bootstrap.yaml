@@ -89,6 +89,9 @@ spec:
         - mountPath: /data
           name: data
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
       - name: data
         persistentVolumeClaim:

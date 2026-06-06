@@ -231,6 +231,9 @@ spec:
         - mountPath: /data
           name: minio-data
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
       - name: postgres-data
         persistentVolumeClaim:

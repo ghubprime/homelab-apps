@@ -103,6 +103,9 @@ spec:
         - containerPort: 4180
           name: proxy
       priorityClassName: homelab-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
       - name: data
         persistentVolumeClaim:
