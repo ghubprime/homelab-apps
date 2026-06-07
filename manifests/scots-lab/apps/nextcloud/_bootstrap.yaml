@@ -174,7 +174,7 @@ type: Opaque
 apiVersion: v1
 data:
   password: Y2hhbmdlbWU=
-  postgres-password: emdUSzFnRm9qZg==
+  postgres-password: WUdZTjBjbWJkUw==
 kind: Secret
 metadata:
   labels:
@@ -378,7 +378,13 @@ spec:
           periodSeconds: 10
           successThreshold: 1
           timeoutSeconds: 5
-        resources: {}
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
         volumeMounts:
         - mountPath: /var/www/
           name: nextcloud-main

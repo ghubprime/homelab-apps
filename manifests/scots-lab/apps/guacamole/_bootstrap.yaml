@@ -260,9 +260,17 @@ spec:
         name: postgresql
         ports:
         - containerPort: 5432
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
         volumeMounts:
         - mountPath: /var/lib/postgresql/data
           name: pgdata
+      priorityClassName: homelab-data
       volumes:
       - name: pgdata
         persistentVolumeClaim:
