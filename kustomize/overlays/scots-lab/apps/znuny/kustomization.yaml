@@ -12,3 +12,4 @@ resources:
   - znuny-service.yaml
   - httproute.yaml
   - sealed-znuny-db-secret.yaml
+  - znuny-cnp.yaml

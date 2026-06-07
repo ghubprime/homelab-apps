@@ -10,3 +10,4 @@ resources:
   - httproute.yaml
   - pvc.yaml
   - sealed-outline-secret.yaml
+  - outline-cnp.yaml

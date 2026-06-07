@@ -1,0 +1,38 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: outline-isolation-baseline
+  namespace: outline
+spec:
+  # Default-deny ingress with explicit allowlist
+  endpointSelector: {}
+  ingress:
+  # Allow ingress from kGateway (external traffic)
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kgateway-system
+  # Allow Prometheus scraping
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-prometheus-system
+  # Allow uptime-kuma health checks
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: uptime-kuma
+
+  egress:
+  # Allow intra-namespace communication (app <-> postgres, minio, redis)
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: outline
+  # Allow DNS resolution
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+  # Allow external egress for OIDC validation and S3 storage
+  - toEntities:
+    - world
+    - host
+  - toCIDR:
+    - 0.0.0.0/0

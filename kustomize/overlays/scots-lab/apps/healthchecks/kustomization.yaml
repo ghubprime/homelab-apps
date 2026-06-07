@@ -8,3 +8,4 @@ resources:
   - service.yaml
   - httproute.yaml
   - sealed-oauth2-proxy-secret.yaml
+  - healthchecks-cnp.yaml

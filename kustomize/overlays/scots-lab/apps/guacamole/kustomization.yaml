@@ -11,3 +11,4 @@ resources:
   - sealed-guacd-secret.yaml
   - sealed-oidc-secret.yaml
   - httproute.yaml
+  - guacamole-cnp.yaml

@@ -11,3 +11,4 @@ resources:
   - pvc.yaml
   - sealed-romm-secret.yaml
   - sealed-oauth2-proxy-secret.yaml
+  - romm-cnp.yaml

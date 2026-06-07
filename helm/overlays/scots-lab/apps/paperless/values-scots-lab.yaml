@@ -1,3 +1,6 @@
+# Protect from eviction during disk pressure events
+priorityClassName: homelab-data
+
 env:
   TZ: "UTC"
   PAPERLESS_URL: "https://docs.srbii.com"

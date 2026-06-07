@@ -10,3 +10,4 @@ resources:
   - httproute.yaml
   - pvc.yaml
   - sealed-linkwarden-secret.yaml
+  - linkwarden-cnp.yaml
