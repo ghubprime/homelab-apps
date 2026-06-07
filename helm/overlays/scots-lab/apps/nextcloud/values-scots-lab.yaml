@@ -7,6 +7,15 @@ image:
   tag: 33.0.2-apache
   pullPolicy: IfNotPresent
 
+# Right-size for homelab — PHP-Apache with document processing
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
 ingress:
   enabled: false
 

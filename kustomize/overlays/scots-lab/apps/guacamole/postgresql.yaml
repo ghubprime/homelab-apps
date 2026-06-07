@@ -25,9 +25,17 @@ spec:
       labels:
         app: postgresql
     spec:
+      priorityClassName: homelab-data
       containers:
         - name: postgresql
           image: postgres:16-alpine
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
             - name: POSTGRES_USER
               value: "guacamole"
