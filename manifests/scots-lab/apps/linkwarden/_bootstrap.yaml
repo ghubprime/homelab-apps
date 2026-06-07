@@ -167,6 +167,37 @@ spec:
       name: linkwarden-secret
       namespace: linkwarden
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: linkwarden-isolation-baseline
+  namespace: linkwarden
+spec:
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: linkwarden
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+  - toEntities:
+    - world
+    - host
+  - toCIDR:
+    - 0.0.0.0/0
+  endpointSelector: {}
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kgateway-system
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-prometheus-system
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: uptime-kuma
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

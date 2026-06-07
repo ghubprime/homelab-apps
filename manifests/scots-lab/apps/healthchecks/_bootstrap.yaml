@@ -126,6 +126,39 @@ spec:
       name: healthchecks-oauth2-proxy-secret
       namespace: healthchecks
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: healthchecks-isolation-baseline
+  namespace: healthchecks
+spec:
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: healthchecks
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+  - toEntities:
+    - world
+    - host
+  - toCIDR:
+    - 0.0.0.0/0
+  endpointSelector: {}
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kgateway-system
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-prometheus-system
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: uptime-kuma
+  - fromEntities:
+    - cluster
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
