@@ -28,13 +28,14 @@ spec:
             command: ["/bin/sh", "-c"]
             args:
               - |
+                cp /config/rclone.conf /tmp/rclone.conf
                 echo "=== GDrive R2 Mirror: $(date -Iseconds) ==="
                 echo "Copying R2 bucket to Google Drive..."
 
                 rclone copy \
                   R2:homelab-velero-backups \
                   GDrive:velero-mirror \
-                  --config /config/rclone.conf \
+                  --config /tmp/rclone.conf \
                   --transfers 4 \
                   --checkers 8 \
                   --log-level INFO \
@@ -56,6 +57,8 @@ spec:
             - name: rclone-config
               mountPath: /config
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
             resources:
               requests:
                 cpu: 50m
@@ -77,3 +80,5 @@ spec:
           - name: rclone-config
             secret:
               secretName: rclone-config
+          - name: tmp
+            emptyDir: {}

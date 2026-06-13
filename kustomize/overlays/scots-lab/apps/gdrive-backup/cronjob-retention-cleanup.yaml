@@ -28,12 +28,13 @@ spec:
             command: ["/bin/sh", "-c"]
             args:
               - |
+                cp /config/rclone.conf /tmp/rclone.conf
                 echo "=== GDrive Retention Cleanup: $(date -Iseconds) ==="
 
                 echo "--- Pruning velero-mirror (>365 days) ---"
                 rclone delete \
                   GDrive:velero-mirror \
-                  --config /config/rclone.conf \
+                  --config /tmp/rclone.conf \
                   --min-age 365d \
                   --log-level INFO \
                   --stats-one-line \
@@ -43,7 +44,7 @@ spec:
                 echo "--- Pruning pvc-snapshots (>180 days) ---"
                 rclone delete \
                   GDrive:pvc-snapshots \
-                  --config /config/rclone.conf \
+                  --config /tmp/rclone.conf \
                   --min-age 180d \
                   --log-level INFO \
                   --stats-one-line \
@@ -51,9 +52,9 @@ spec:
                 echo "PVC snapshots pruning complete."
 
                 echo "--- Drive usage summary ---"
-                rclone size GDrive:velero-mirror --config /config/rclone.conf --json 2>/dev/null | \
+                rclone size GDrive:velero-mirror --config /tmp/rclone.conf --json 2>/dev/null | \
                   (cat; echo) | head -1
-                rclone size GDrive:pvc-snapshots --config /config/rclone.conf --json 2>/dev/null | \
+                rclone size GDrive:pvc-snapshots --config /tmp/rclone.conf --json 2>/dev/null | \
                   (cat; echo) | head -1
 
                 echo "=== Retention cleanup complete ==="
@@ -61,6 +62,8 @@ spec:
             - name: rclone-config
               mountPath: /config
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
             resources:
               requests:
                 cpu: 50m
@@ -82,3 +85,5 @@ spec:
           - name: rclone-config
             secret:
               secretName: rclone-config
+          - name: tmp
+            emptyDir: {}
