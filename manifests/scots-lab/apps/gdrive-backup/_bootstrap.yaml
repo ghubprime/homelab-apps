@@ -31,13 +31,14 @@ spec:
           containers:
           - args:
             - |
+              cp /config/rclone.conf /tmp/rclone.conf
               echo "=== GDrive R2 Mirror: $(date -Iseconds) ==="
               echo "Copying R2 bucket to Google Drive..."
 
               rclone copy \
                 R2:homelab-velero-backups \
                 GDrive:velero-mirror \
-                --config /config/rclone.conf \
+                --config /tmp/rclone.conf \
                 --transfers 4 \
                 --checkers 8 \
                 --log-level INFO \
@@ -81,11 +82,15 @@ spec:
             - mountPath: /config
               name: rclone-config
               readOnly: true
+            - mountPath: /tmp
+              name: tmp
           restartPolicy: OnFailure
           volumes:
           - name: rclone-config
             secret:
               secretName: rclone-config
+          - emptyDir: {}
+            name: tmp
   schedule: 0 3 * * *
   successfulJobsHistoryLimit: 3
 ---
@@ -114,12 +119,13 @@ spec:
           containers:
           - args:
             - |
+              cp /config/rclone.conf /tmp/rclone.conf
               echo "=== GDrive Retention Cleanup: $(date -Iseconds) ==="
 
               echo "--- Pruning velero-mirror (>365 days) ---"
               rclone delete \
                 GDrive:velero-mirror \
-                --config /config/rclone.conf \
+                --config /tmp/rclone.conf \
                 --min-age 365d \
                 --log-level INFO \
                 --stats-one-line \
@@ -129,7 +135,7 @@ spec:
               echo "--- Pruning pvc-snapshots (>180 days) ---"
               rclone delete \
                 GDrive:pvc-snapshots \
-                --config /config/rclone.conf \
+                --config /tmp/rclone.conf \
                 --min-age 180d \
                 --log-level INFO \
                 --stats-one-line \
@@ -137,9 +143,9 @@ spec:
               echo "PVC snapshots pruning complete."
 
               echo "--- Drive usage summary ---"
-              rclone size GDrive:velero-mirror --config /config/rclone.conf --json 2>/dev/null | \
+              rclone size GDrive:velero-mirror --config /tmp/rclone.conf --json 2>/dev/null | \
                 (cat; echo) | head -1
-              rclone size GDrive:pvc-snapshots --config /config/rclone.conf --json 2>/dev/null | \
+              rclone size GDrive:pvc-snapshots --config /tmp/rclone.conf --json 2>/dev/null | \
                 (cat; echo) | head -1
 
               echo "=== Retention cleanup complete ==="
@@ -169,11 +175,15 @@ spec:
             - mountPath: /config
               name: rclone-config
               readOnly: true
+            - mountPath: /tmp
+              name: tmp
           restartPolicy: OnFailure
           volumes:
           - name: rclone-config
             secret:
               secretName: rclone-config
+          - emptyDir: {}
+            name: tmp
   schedule: 0 4 1 * *
   successfulJobsHistoryLimit: 3
 ---
