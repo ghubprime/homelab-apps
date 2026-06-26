@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: gdrive-backup
     app.kubernetes.io/component: r2-mirror
 spec:
-  schedule: "0 3 * * *"  # Daily at 3:00 AM UTC
+  schedule: "0 6 * * *"  # Daily at 6:00 AM UTC (11 PM PDT — outside 6-10 PM home hours)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3

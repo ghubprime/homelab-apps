@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: gdrive-backup
     app.kubernetes.io/component: retention-cleanup
 spec:
-  schedule: "0 4 1 * *"  # 1st of every month at 4:00 AM UTC
+  schedule: "0 7 1 * *"  # 1st of every month at 7:00 AM UTC (12 AM PDT — outside 6-10 PM home hours)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
