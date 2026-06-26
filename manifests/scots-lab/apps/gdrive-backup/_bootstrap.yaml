@@ -91,7 +91,7 @@ spec:
               secretName: rclone-config
           - emptyDir: {}
             name: tmp
-  schedule: 0 3 * * *
+  schedule: 0 6 * * *
   successfulJobsHistoryLimit: 3
 ---
 apiVersion: batch/v1
@@ -184,7 +184,7 @@ spec:
               secretName: rclone-config
           - emptyDir: {}
             name: tmp
-  schedule: 0 4 1 * *
+  schedule: 0 7 1 * *
   successfulJobsHistoryLimit: 3
 ---
 apiVersion: bitnami.com/v1alpha1
