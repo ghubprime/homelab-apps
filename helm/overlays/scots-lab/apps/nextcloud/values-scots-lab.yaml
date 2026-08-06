@@ -26,7 +26,19 @@ service:
 nextcloud:
   host: files.srbii.com
   database: postgresql
-  
+
+  # Admin credentials come from a SealedSecret (sealed-nextcloud-admin.yaml).
+  # enabled:true suppresses the chart's own `nextcloud` Secret, which otherwise
+  # renders the plaintext admin password into the committed manifest.
+  # NOTE: values here are preserved as-is, not rotated — changing this Secret
+  # does not change the already-provisioned Nextcloud account (that lives in
+  # oc_users and needs `occ user:resetpassword`).
+  existingSecret:
+    enabled: true
+    secretName: nextcloud-admin-creds
+    usernameKey: nextcloud-username
+    passwordKey: nextcloud-password
+
   extraEnv:
     - name: OIDC_CLIENT_ID
       valueFrom:
@@ -80,6 +92,18 @@ persistence:
   size: 100Gi
   accessMode: ReadWriteOnce
 
+# The application's DB credential comes from a SealedSecret
+# (sealed-nextcloud-db.yaml). enabled:true suppresses the chart's `nextcloud-db`
+# Secret, which rendered db-password in plaintext. The chart reads the app's DB
+# env vars from whatever secretName is given here (templates/deployment.yaml),
+# so this must line up with the postgresql block below.
+externalDatabase:
+  existingSecret:
+    enabled: true
+    secretName: nextcloud-db-creds
+    usernameKey: db-username
+    passwordKey: db-password
+
 postgresql:
   enabled: true
   image:
@@ -90,6 +114,16 @@ postgresql:
       auth:
         database: nextcloud
         username: nextcloud
+        # Credentials come from a SealedSecret (sealed-nextcloud-postgresql.yaml).
+        # This suppresses the subchart's own `nextcloud-postgresql` Secret, which
+        # previously rendered the DB password in plaintext AND minted a fresh
+        # random superuser password on every CI render (see CHANGELOG 2026-08-06).
+        # The `password` key MUST stay identical to db-password in
+        # sealed-nextcloud-db.yaml — both are the `nextcloud` role's password.
+        existingSecret: nextcloud-postgresql-creds
+        secretKeys:
+          adminPasswordKey: postgres-password
+          userPasswordKey: password
   primary:
     persistence:
       enabled: true

@@ -6,6 +6,12 @@ resources:
   - httproute.yaml
   - nextcloud-auth-secret-patch.yaml
   - nextcloud-cnp.yaml
+  # Credentials moved out of the chart and into SealedSecrets so no plaintext
+  # password is committed. The chart's own Secret rendering is suppressed via
+  # the matching existingSecret settings in values-scots-lab.yaml.
+  - sealed-nextcloud-admin.yaml
+  - sealed-nextcloud-db.yaml
+  - sealed-nextcloud-postgresql.yaml
 helmCharts:
 - name: nextcloud
   repo: https://nextcloud.github.io/helm/
