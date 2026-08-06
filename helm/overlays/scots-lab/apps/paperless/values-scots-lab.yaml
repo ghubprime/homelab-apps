@@ -56,7 +56,15 @@ postgresql:
     tag: 16.2.0-debian-11-r1
   auth:
     database: paperless
-    postgresPassword: changeme
+    # Credential comes from sealed-paperless-postgresql.yaml, suppressing the
+    # subchart's own Secret which committed this password in plaintext.
+    # NOTE: value is carried over unchanged, NOT rotated. paperless connects as
+    # the postgres superuser (PAPERLESS_DBPASS <- postgres-password), so this is
+    # a runtime credential — rotating it needs an ALTER USER landed together with
+    # the render, which cannot be supervised while GitHub Actions is down.
+    existingSecret: paperless-postgresql-creds
+    secretKeys:
+      adminPasswordKey: postgres-password
   primary:
     persistence:
       enabled: true
@@ -71,7 +79,12 @@ redis:
     tag: 7.4.2-debian-12-r0
   auth:
     enabled: true
-    password: changeme
+    # Credential comes from sealed-paperless-redis.yaml. Safe to rotate here:
+    # the redis server and the paperless client both read this one Secret and
+    # both restart when the secret name changes, so the new password applies
+    # itself — no manual step, unlike the postgres credential above.
+    existingSecret: paperless-redis-creds
+    existingSecretPasswordKey: redis-password
   master:
     persistence:
       enabled: true

@@ -1,0 +1,13 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: photoprism-admin-creds
+  namespace: photoprism
+spec:
+  encryptedData:
+    PHOTOPRISM_ADMIN_PASSWORD: AgBDFrSyKb5abarCt/KTLEBmWQKHzx6CowK/Bwye7Cg35KOH5szANuLPp9wSlsMyJPyHLcUdkyoVw3Rt/aXDJign30WwJQDvHIXQfiNPc2NQXZ44BMrgaNQWw9k6nhn70HI2+eTeA+6Vpp6KKZzaD8BLbJAHz2oRxE1Wti2PlGAOtYNXO4P4nSifJZW5oJ6x6QCJCsoVpOpPzrjQfG3dCljDY2T76szc76qTSk4kCSotFG25YHnVZ9s8I1Z9aRvHOq2XarbpN/lNwggLR09VSsW1zBDsVUNmz67ywGX2g6kV3klP0Cw1oYz90RqUb2Q5GZ8rn7NCpv8yVxVoj0IIDHAT/9YVTSgX8hLD0w8sSPh8fbzkWaOO7SYXzYhG2Uh9qhtUjSTUVVzDqsl6C5eEytLWFmThqDl63I/IIkzbEgalup+TStr2UR0IKzvI5FPMHRj0EyBnqkWfY5feVhHw35LfAyjfTetaUKar8zJDRK0LsvdRXVyvQ4GEOZFV3psWiNqVjXCRbRmP0BXh2D8sONmWAUfKuQesqdqS4bXf7WUEGuOAklpwuZcJEUMageeDSnwdThv7XHAb1JzDvRU2TTAAwmwgSbgJnlAfAHYyMGoxs2XETnH2IqGkRTeNL/n9ZMQxISALoRActR9m+JmDhMy/gxxTvHiQMVZ+BI6hTCtnh8WHogZtbAYVtyy6ujoAfgmyPvhruZidJD898Itxx1po3LbyfvU4a5dNew3d
+  template:
+    metadata:
+      name: photoprism-admin-creds
+      namespace: photoprism

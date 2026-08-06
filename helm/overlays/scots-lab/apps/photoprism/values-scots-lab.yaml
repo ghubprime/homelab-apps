@@ -8,7 +8,14 @@ image:
   pullPolicy: IfNotPresent
 
 adminUser: "admin"
-adminPassword: "changeme"    # Fallback local admin — OIDC is primary auth
+# Not a credential. The real admin password lives in sealed-photoprism-admin.yaml
+# and is injected by photoprism-admin-env-patch.yaml, which replaces the env entry
+# the chart wires to its own Secret. This value is only what the chart renders into
+# that now-unreferenced Secret.
+# Do NOT set this to "" — the chart falls back to `randAlphaNum 16` when its
+# `lookup` finds no live Secret, which is always the case during offline CI
+# renders, producing a new password on every build.
+adminPassword: "unused-managed-via-sealedsecret"    # Fallback local admin — OIDC is primary auth
 
 # OIDC — native chart block
 # PHOTOPRISM_OIDC_SECRET is injected separately via SealedSecret envFrom patch

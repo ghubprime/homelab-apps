@@ -1,0 +1,28 @@
+# Repoint PHOTOPRISM_ADMIN_PASSWORD at the SealedSecret.
+#
+# The chart hardcodes this env as an explicit secretKeyRef into its own
+# `photoprism-photoprism-secrets` (templates/statefulset.yaml), and offers no
+# existingSecret option for it. An envFrom overlay — the pattern used for OIDC
+# here — cannot win, because an explicit `env` entry always takes precedence
+# over `envFrom`. So the env entry itself is replaced.
+#
+# Emptying `adminPassword` in values is NOT a workaround: the chart's
+# secret.yaml falls back to `randAlphaNum 16` whenever its `lookup` of the live
+# Secret returns nothing, and `lookup` always returns nothing during the offline
+# `kustomize build` CI runs. That would mint a new admin password on every
+# render — the same churn already fixed for Nextcloud.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: photoprism-photoprism
+spec:
+  template:
+    spec:
+      containers:
+        - name: photoprism-plus
+          env:
+            - name: PHOTOPRISM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: photoprism-admin-creds
+                  key: PHOTOPRISM_ADMIN_PASSWORD

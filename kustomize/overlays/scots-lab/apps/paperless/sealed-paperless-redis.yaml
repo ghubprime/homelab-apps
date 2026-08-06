@@ -1,0 +1,13 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: paperless-redis-creds
+  namespace: paperless
+spec:
+  encryptedData:
+    redis-password: AgBw/5BpHK3BRRgd8KqKNxqTvdbD/e2ox1JT68ch2+PYAJnKVYpWF4dePjz5FhR+/NPetW0NcdJ6awAy8iaBGyTLIR7FHE9M2ChuvhNLycWVSgGBZe1F/OfXkbqPyIUfKTl+k+ow6IzCc5hB9lZeABWz48k0yy5AKpYTovD4e3sS+mzRxV158HLz1QlMSZ0lTc8Ab8SDjDVPtcL01uTny65yEENE6XzREvraRGvWnVhx1ahJ6wg2gIb+Hcbl/axKtRDSjrWuynzvskBPhGfcIUusfq20em7OzQhr72T/uyyqKZlmuF9ijLvjfS+nT+BES1/I6rQl3cE5pgu1pMYWZT6X6G9ZR/jUtmSRldXzcx1KePPKrE9ip1Li7L5Pwnm8Y7I/VCEg3p6TPaARf9GTwKkPGSrDLcHt3pJl7Udair0k555FqWFLQ4SwFpvzLVnmM7ff6+7Tj4VwAYj4UG6UHMTavceeDcoCeWMVDFOvxfKF+FGu1uIKP0HlR6nqR49s1ExDue7Yeh4f1t76tIzaV4KkuxL1bFZqS5poWsaU0Y5CoWnjs/fWLTRi8NhIDg3XG1NjVNcDmJ3U75rKw/cUkcFfAk6rxdbaOBgULT4SMnmx0Gmf/mO0bTyYnT6dMZ5seLsFNpY/v06z5wFD/BfKsUPN7f5AsxhvfE4iz/Fujh+jvBOQMx5K770Sy4LrjepUDmOw0vhue8xqsxf/PMKua05U91fXHmGRK8AFQi0v
+  template:
+    metadata:
+      name: paperless-redis-creds
+      namespace: paperless

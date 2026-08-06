@@ -6,6 +6,11 @@ resources:
   - httproute.yaml
   - sealed-paperless-oidc.yaml
   - paperless-cnp.yaml
+  # Postgres + Redis credentials, moved out of the chart so no plaintext
+  # password is committed. Paired with the existingSecret settings in
+  # values-scots-lab.yaml, which suppress the subcharts' own Secrets.
+  - sealed-paperless-postgresql.yaml
+  - sealed-paperless-redis.yaml
 helmCharts:
   - name: paperless-ngx
     repo: https://charts.gabe565.com

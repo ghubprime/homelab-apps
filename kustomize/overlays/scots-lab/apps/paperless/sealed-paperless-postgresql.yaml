@@ -1,0 +1,13 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: paperless-postgresql-creds
+  namespace: paperless
+spec:
+  encryptedData:
+    postgres-password: AgCp1dMtBm0tmIeuYgTai1qHDMb2i72P6sZzHbNvGNLOJ1xJCJ0u4qRsBtjUjCZ88u4Cd7CuF0tLOjLTiG/2rK46R9zBh+amqnWEUcKC49FzPB5YrZD5fgA0+yCuHtCtg1h6zUX3RICmbVeP1752Jruc354Y6pwHnNH/Mt4wCBo7hShn2PFHGJAGFsUOPql/CcJ2s0LlfoQMS4hpGCz7h1QmZI4o1L7K1/Nfcu4gje6CsnplhWvq2DIotnhcBUDGq7yh3GCJwW6O6M89ri6zxo011xeZ/aNM0DFD9dZGcEtk8ME+jLNQBCHd9I5tYkHqo9eQa929RKmjr6Hk570lXywCIrXb6/PHcx+esn11Mk3YcTiBUiFVza9F3ihUR+6xSvzJ6iv0wqFvWdtwZdNrwbWERnOqxi/GfR2AowcWrJyTpIXcjTBWSX7x+7lmS1+ylmT2lZoCXENZ+OAfLjVNeKbERlLj2qGg27XL9WJ6I1dSYTZ2TpEDZpNc0TOPnir0YtRL8MDH2UCmIkmT1IHl11Qt0OflrKjBeOO5KM1u1sbPXlYCAZnE+yDMI/moiit6KtJpIU2MQDhVxQfu/6fB4EEFL0Lsg7QEd1wBPxZi9GZ/0jipFNSPFWFoFmQxomvNyObHAmQeiAwNuhTGFCGVfhtlJUxTrahgWd43WbkkWJo05aIjDh1nVAABxQihfmpCHBRze3LrsBFLvA==
+  template:
+    metadata:
+      name: paperless-postgresql-creds
+      namespace: paperless

@@ -5,8 +5,10 @@ resources:
   - ../../../../base/apps/photoprism/
   - httproute.yaml
   - sealed-photoprism-oidc.yaml
+  - sealed-photoprism-admin.yaml
 patches:
   - path: photoprism-oidc-env-patch.yaml
+  - path: photoprism-admin-env-patch.yaml
 helmCharts:
   - name: photoprism-plus
     repo: https://charts.photoprism.app/photoprism
