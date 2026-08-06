@@ -142,52 +142,6 @@ metadata:
   namespace: nextcloud
 ---
 apiVersion: v1
-data:
-  nextcloud-password: Y2hhbmdlbWU=
-  nextcloud-username: YWRtaW4=
-kind: Secret
-metadata:
-  labels:
-    app.kubernetes.io/instance: nextcloud
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: nextcloud
-    helm.sh/chart: nextcloud-4.6.11
-  name: nextcloud
-  namespace: nextcloud
-type: Opaque
----
-apiVersion: v1
-data:
-  db-password: Y2hhbmdlbWU=
-  db-username: bmV4dGNsb3Vk
-kind: Secret
-metadata:
-  labels:
-    app.kubernetes.io/instance: nextcloud
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: nextcloud
-    helm.sh/chart: nextcloud-4.6.11
-  name: nextcloud-db
-  namespace: nextcloud
-type: Opaque
----
-apiVersion: v1
-data:
-  password: Y2hhbmdlbWU=
-  postgres-password: cGlDdE9xVVpzUA==
-kind: Secret
-metadata:
-  labels:
-    app.kubernetes.io/instance: nextcloud
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: postgresql
-    app.kubernetes.io/version: 15.4.0
-    helm.sh/chart: postgresql-12.12.10
-  name: nextcloud-postgresql
-  namespace: nextcloud
-type: Opaque
----
-apiVersion: v1
 kind: Service
 metadata:
   labels:
@@ -322,12 +276,12 @@ spec:
           valueFrom:
             secretKeyRef:
               key: nextcloud-username
-              name: nextcloud
+              name: nextcloud-admin-creds
         - name: NEXTCLOUD_ADMIN_PASSWORD
           valueFrom:
             secretKeyRef:
               key: nextcloud-password
-              name: nextcloud
+              name: nextcloud-admin-creds
         - name: NEXTCLOUD_TRUSTED_DOMAINS
           value: files.srbii.com
         - name: NEXTCLOUD_DATA_DIR
@@ -448,7 +402,7 @@ spec:
           valueFrom:
             secretKeyRef:
               key: db-username
-              name: nextcloud-db
+              name: nextcloud-db-creds
         - name: POSTGRES_HOST
           value: nextcloud-postgresql
         image: docker.io/bitnamilegacy/postgresql:15.4.0-debian-11-r45
@@ -526,12 +480,12 @@ spec:
           valueFrom:
             secretKeyRef:
               key: password
-              name: nextcloud-postgresql
+              name: nextcloud-postgresql-creds
         - name: POSTGRES_POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
               key: postgres-password
-              name: nextcloud-postgresql
+              name: nextcloud-postgresql-creds
         - name: POSTGRES_DATABASE
           value: nextcloud
         - name: POSTGRESQL_ENABLE_LDAP
@@ -629,6 +583,34 @@ spec:
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
+  name: nextcloud-admin-creds
+  namespace: nextcloud
+spec:
+  encryptedData:
+    nextcloud-password: AgAnU+6ovyUDXoAL87lR9CNCMHQ9w5mvYCYx+tCEU6tlokR0s5s2iYsHGPcTDnWmw2OnfhqmtghS3I/yf1GpqCwN0U4TfNeYeNxrC9J/oCKwFhWcGRscuLJ3oY6w4lB0qm16bSRwEJOVXBo8YWJMelVuUUi8pjhMj1jpzry3PS7lXKmHPWdodVGAMDygXbYjKc4kWvxVCdvbeeJgNCvYmBxwy2DlSRX04xNGYnmdJHOzgz3SYLnhXxKd6sRzSFC9KgetewaIlVHpVzc8e0/IiqKBX1uzwo3q7eTlkYiKGoeeu6RJbqN/BeLhSy1vxKgG8uhUEZmfjabD7rKtvC2PS7n3IeHyEHJMxUh43+R+nV6TMCfAuZggc9P+IgwIX7haX4csKfv8U/lpKeaGSJKVQ4cUDpHZuUzIROZNEMz/rNVUJo2jp0rB3L3T4rgaBF26WCOeeURWgpsua5axXO5Q/M3EvL/vNILtnIxGJhvCtEn4XUSSZ2HV6YLGEdJqLWas7q5F8Av0zjB2syVf0eRnlIxGsvh6EnJoVECj7dFKpa5iyXkpu1ucHbsq56g21/pU9hskARrPeiZK3KNzhN+rZ3P6AUiIVjCl/vgsBrnHOnuuTLDLLqLa7fCvOvSpBXxpRKr1y9IBbPcfiX6Jss72It+iuS3B8JurABF+EHBV0kezGTPRecNax25tcNpmJCTBXtryn4mhWuRwZQ==
+    nextcloud-username: AgBSu0vdxxcKftqKDRI9LN4JSJknpb5VInJ/bZylatQKVx0SyR/OteF/SbWz73kfCu0Dk0YXHNqPIHiDNKePk2RaE3z5LlKcgCAXY3I4quLIel3VMBzg8aZv9cfZPrK8nS6FWmbOkS2DQqg/a739q3CT4wy1XYJZKEpmuesZF2Z7ZGJ6l7Zz7S9fCnhz8UhAtBrkNjRqUecYQc1B3GiHRpw/1BZw3cLIMDJNqNZC8kkYT0CdxS+5QDHHGSTlHO2QzzW1IgelnwuopdMSU2GNUA+ypNfjL93Ezom8hY5jFF7fsI9fv31/DJVgNF7FxJAxwIZWuH9OpI8etu4af3qPSCKMh1HPIGZOtKoos8mYSeTqYRkWnx41scgr7SIwkewo+yGO/sAk/a1SPMVWeADgIWiaynvxsFPWFyFalepLmO+ZOt2ASZqa9zttrluyNvqC7u9wRoAtQ8K/+I5SlayE9bkkPCGMuhlxnwWoEwoQMX0teaJPKBd+Utug8QX3Q1JqZnVYpXAh2iyQEjxUSv40TpTe7XTK0mhMovyRf7OP3F4nqPoBWkAgm8Jf3gQtueqSEAkCNsLK27CrzE0aH7W2Qit82UjW5YiJdMA9j0miAInXntelhn1gA9QMRMlCZDExjPG3Uo6cIbW1TYqHz7blpb9kELOg5/cIC+GEbdfCv4REeOGAXdiHR5QnOib+kNdb380ayRJfxg==
+  template:
+    metadata:
+      name: nextcloud-admin-creds
+      namespace: nextcloud
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: nextcloud-db-creds
+  namespace: nextcloud
+spec:
+  encryptedData:
+    db-password: AgAPO7ifOUkeYut0Jt9ha21iONIg02hG/cMEhp1UpoQ8j6duG3HceYHn2O/7pgmDR/6VKFuUMtUxIF9QJ6I7HN2LSE2AZUBFZ0nq+K0lQkLeduRNZMamb1kcNwq7vLm2Za4CuH0ADk+1zFoCYO6B0Ox8e3bcOazxV9ymYVojkep42gZ1wbs9KdPKUqVyMTqn4FoSkspN6Mh55baKQLII9IXm3Wzq456nrV9i/1lyWzTEIxuEzdXyOgks8JUWGnzA8oQZqg5nIiUvnWZBgoq4Z41UoivHryHjVZ8NyTwF3FvCv5Rz2baZudxdn281dHv2OH9Od5j/mUiGbuHVgHZ+C2xO7KsNamuNuAorEzvF0QXPBPC8dZNKxC7gf0b8EJswC/5gfgMxumqOFb+4yKeFVc7S1rddb3WL6/MunKJAAx/4sIuL7QTB2csJxScbHAwbG8UZ2N4SucVd6732BtP14RLv1UkS9mdhOPrPJ1NYlyr753Wx07nud1XzP3D3FNDCltPw0rjXaJzqxNgAL4u5QEktxR8RdFa9m7wJYWhkATRBM2ZjvX6HuG7zDExdeXPjAIz5UI1wkPwEcVsijb45Tt2qIar8ima9dWgMX2tEp0a2LDuyl0CbCwjGcupTgUEv3kRBD3bvxBPc6yitF8cxVadHVrEt9eAf6yHFScCnE/KZMejJx3knKg+vQW8lpv+IFwhvY76dWb8BJfPD3iaOoMt8bqocUF6Z7YPmiIUK
+    db-username: AgBUJGeQBCpwp089Fv5DQOHSdH3phr+k78OYn+27W6HnnX0EZk4G6o4sR3ZTOFcj2MTOBYnV4SSQUlhNLX2VzDfRH5ZcuC8rEblSUeR9+Z+1A5jtUbwgjC7J7qMoT3ARNn8z76VOySBNzi21GoIiVNJqjhV4wD1uZB0KfErW5iiVPuSgdR0m923npuIzi85tICn4WRMp6bwP6GYulRm9mb42WGrt4W39NlOwy01LoJB+ujArsu4usDog96H4irQWitdYD3V6BzdorJIxA+jAJY2u3FLvsH9l3Q5jukDpk+6cRAjh8PJESPtNURE5FpnUzaM/1AoDXYyDn4QuAbRA/nKWwPOOuXumMDdvCjtoQXYvOm09u4mJkdCyydIZIHQAi1ORjbT8aap0sT/bWtMBkuhWlTAK22E6bjfm03LgEwE9pGQMCF/GMcrDNvB52v7utBZup33duAFh9Kz0h7hoQqHayT07/y9N4TDe06tP3b0VgBIOevJkQIN9aGYvBOwufGdftp4ijc0ak72nDz4PPLxRw56neFPSdqDQxHtVRPT2W2TlrIEUG5/Gx4Jqt1RwtX5TrVfyhHSMgY6VllmUpFhKDBYwBvTCPo7/P8bajsas9Avxw/j3RolGRoCwPEDUuEHU0ubziNteaTnf0ZJlSPue2daDUywvYg8/MiM3XKhf2ydWE3+qU4Ja69vQOXpDUn3EO4eQlkZNGaw=
+  template:
+    metadata:
+      name: nextcloud-db-creds
+      namespace: nextcloud
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
   name: nextcloud-oidc-secret
   namespace: nextcloud
 spec:
@@ -639,6 +621,20 @@ spec:
   template:
     metadata:
       name: nextcloud-oidc-secret
+      namespace: nextcloud
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: nextcloud-postgresql-creds
+  namespace: nextcloud
+spec:
+  encryptedData:
+    password: AgBBXwD4syFD0vvslfFhqhmU6U/x+63yojMZc6aHiNblJRYf65NqYQQFNut9hYY+daZyuIuHBNz9XSrmh54k69U/zJSGkO7RFq1IQaWOHlhzfn+it/UtYm/vMTIiSP/32YweCeqtadxqA4YwdMwJ8wNGyEeHtdI20G50jqfrvii+PTEyCMnGb4flMy+6AlY/beSIDMFuL5ps6cQs0iVzv3vvGWEDyN4tWoRfWoADqAPQIZ8K+l1Onr7hhuQXcedhkOw/N7TxAVMfTEE9wmSPA51N27g6Ta1+x0H1z69ckinTVLRLfP1rwQci+o18T+43na46nj4rMKMQAlepIuQtASPBgZ78xUXyhlGiwvtx1Ms4zwovoTNeRKGim6OSj+oZuyuLi4TJ3Wa29s4A6ryqiF0fVibn078HpBF58+teZ8o31bksi9OmgLH2GTVSBv2o6UT1e6Rypin1BtiGrqkPmJza/Yc9keib8qolQfdLEvhpQ9C/G4QFWRRcH0T8TgqDKemDBsWhw27Jvh1MQF+iqaXTQcOT0t9lOmymUkiKDtNPBtoCe6+E6ToevS4fgWvZd5MrxhEmsqGJMn74wlquBS4PeeW5TJ9pI0AAKLqYOXBIKWzJrLdEnlUFy0eGegIrLSq62kRsGElwXpJgFvP6BvHLLECSI+ZrKiH58v9HmdC1/sOvgCNQZ1/LeGB5+yhheyWVWfdGAe3jhZt4kN8vAUiDFArDN9m4M3JnojfO
+    postgres-password: AgBzHKcQ9sYbMe4cLw+QtGVVMou1PYzKkOvEHhCqjjfpOGPkZi6XNMB5zQjJTVUhiAbAHaVNl9L3I+nm7EjiWbLGYtRQ+DbMfHXRxL0og8Ph0tB4QFUR7LS4SnYzCxZ6dqIYTcI6veWdciwjAiTQh7rPjMZkzduyABpiGW75u7AzOnIOR8agp8guALBf+mbedc5R6zNxHzarHlDdw2K8yCFjMedLmIvjgO/xo1RBS6D369XL3lZz9tSS7SGfiGnO+79dTP2KGj/CRChBushBZ2f0XoS/JZTd4gfENkPwofY6qaFCXyFR65WsyDFAq4YEO6KQ9v8YMvVd5nK4N7wloqLuOs4pWylFdoRm3J+nILBWLY4ccUs6ghzlgRQ8Xda7DA0SIMLEeiOJvQKSENVldjxLfmTL+U5RHIm+eSlW6VesEQkBeLycESMWkj4ztmMh5C47DMYPFDTubat6StqsqAvJ/WCNUfafKcbl6Utu6IcQn52GWYNImb13+TPErFd3SrNGo20dE6eVE/6tUuSPAHLWTw7OuiqKxFCU5sI+tE4ZhYrQ6OGPFUtE8LGD34qZf19IEKWCZEUJxXKpGhCEQAbWFuvPVa30CjUpQr9mNzNpTr31MFYAaicGDMtO5MBK92wm3lOJKlmEc5cM9kcfwV6llbTfJH1QH9ta4yYTnVG1mHDWyU3lJUm045H2yftG3mX0WdSP2RKWGfJVfNzB2lbiN0A1/+jBCiglA1yQ
+  template:
+    metadata:
+      name: nextcloud-postgresql-creds
       namespace: nextcloud
 ---
 apiVersion: cilium.io/v2
