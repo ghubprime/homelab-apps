@@ -38,15 +38,23 @@ jobs:
       - name: Make script executable and run it
         run: |
           chmod +x ./generate-manifests.sh
+          # Kustomize customFunction exec plugins must be executable too. Windows
+          # checkouts don't carry the bit, and a non-executable plugin makes
+          # 'kustomize build' fail and emit a 0-byte manifest (Rule #13).
+          # Scoped to */plugins/* so the charts/ offline cache is never touched.
+          find kustomize -path '*/plugins/*' -name '*.sh' -exec chmod +x {} +
           ./generate-manifests.sh --force
 
       - name: Validate generated manifests
         run: |
+          # globstar is OFF by default in the Actions bash; without it '**' collapses
+          # to '*' and the glob below silently matches nothing, making this step a no-op.
+          shopt -s globstar nullglob
+
           FAILED=0
+          COUNT=0
           for manifest in manifests/**/_bootstrap.yaml; do
-            if [ ! -f "$manifest" ]; then
-              continue
-            fi
+            COUNT=$((COUNT + 1))
 
             # Guard: Reject empty or near-empty manifests (0-byte deletion trap)
             SIZE=$(stat -c%s "$manifest" 2>/dev/null || echo 0)
@@ -60,18 +68,25 @@ jobs:
             # --ignore-missing-schemas: skip CRDs (Cilium, Gateway API, etc.) that have no upstream schema
             # --summary: only show errors, not every valid resource
             kubeconform \
-              --kubernetes-version 1.35.2 \
+              --kubernetes-version 1.36.1 \
               --ignore-missing-schemas \
               --summary \
               --output text \
               "$manifest" || FAILED=1
           done
 
+          # A zero-match run means the render produced nothing — that must fail loudly,
+          # not report success.
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::No _bootstrap.yaml found under manifests/ — render produced nothing"
+            exit 1
+          fi
+
           if [ "$FAILED" -ne 0 ]; then
             echo "::error::Manifest validation failed — aborting commit to prevent ArgoCD auto-sync of broken state"
             exit 1
           fi
-          echo "✅ All manifests validated successfully"
+          echo "✅ Validated $COUNT manifest(s) successfully"
 
       - name: Commit and Push generated manifests
         uses: stefanzweifel/git-auto-commit-action@v7
