@@ -274,36 +274,6 @@ metadata:
   namespace: paperless
 ---
 apiVersion: v1
-data:
-  postgres-password: Y2hhbmdlbWU=
-kind: Secret
-metadata:
-  labels:
-    app.kubernetes.io/instance: paperless
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: postgresql
-    app.kubernetes.io/version: 16.2.0
-    helm.sh/chart: postgresql-14.0.5
-  name: paperless-postgresql
-  namespace: paperless
-type: Opaque
----
-apiVersion: v1
-data:
-  redis-password: Y2hhbmdlbWU=
-kind: Secret
-metadata:
-  labels:
-    app.kubernetes.io/instance: paperless
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: redis
-    app.kubernetes.io/version: 7.4.2
-    helm.sh/chart: redis-20.7.0
-  name: paperless-redis
-  namespace: paperless
-type: Opaque
----
-apiVersion: v1
 kind: Service
 metadata:
   labels:
@@ -569,7 +539,7 @@ spec:
           valueFrom:
             secretKeyRef:
               key: redis-password
-              name: paperless-redis
+              name: paperless-redis-creds
         - name: PAPERLESS_APPS
           value: allauth.socialaccount.providers.openid_connect
         - name: PAPERLESS_DBENGINE
@@ -582,7 +552,7 @@ spec:
           valueFrom:
             secretKeyRef:
               key: postgres-password
-              name: paperless-postgresql
+              name: paperless-postgresql-creds
         - name: PAPERLESS_DBUSER
           value: postgres
         - name: PAPERLESS_DISABLE_REGULAR_LOGIN
@@ -726,7 +696,7 @@ spec:
           valueFrom:
             secretKeyRef:
               key: postgres-password
-              name: paperless-postgresql
+              name: paperless-postgresql-creds
         - name: POSTGRES_DATABASE
           value: paperless
         - name: POSTGRESQL_ENABLE_LDAP
@@ -852,7 +822,7 @@ spec:
         checksum/configmap: 2a9ab4a5432825504d910f022638674ce88eaefe9f9f595ad8bc107377d104fb
         checksum/health: aff24913d801436ea469d8d374b2ddb3ec4c43ee7ab24663d5f8ff1a1b6991a9
         checksum/scripts: 17793b70d64162465ea645483639267792baeca8d58ed1363d02178de26e126c
-        checksum/secret: 1e28e5ae561812b3504142ef19d3676b5a8439e7ca16e5a6481316fd591f1fff
+        checksum/secret: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
       labels:
         app.kubernetes.io/component: master
         app.kubernetes.io/instance: paperless
@@ -892,7 +862,7 @@ spec:
           valueFrom:
             secretKeyRef:
               key: redis-password
-              name: paperless-redis
+              name: paperless-redis-creds
         - name: REDIS_TLS_ENABLED
           value: "no"
         - name: REDIS_PORT
@@ -1029,7 +999,7 @@ spec:
         checksum/configmap: 2a9ab4a5432825504d910f022638674ce88eaefe9f9f595ad8bc107377d104fb
         checksum/health: aff24913d801436ea469d8d374b2ddb3ec4c43ee7ab24663d5f8ff1a1b6991a9
         checksum/scripts: 17793b70d64162465ea645483639267792baeca8d58ed1363d02178de26e126c
-        checksum/secret: 1e28e5ae561812b3504142ef19d3676b5a8439e7ca16e5a6481316fd591f1fff
+        checksum/secret: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
       labels:
         app.kubernetes.io/component: replica
         app.kubernetes.io/instance: paperless
@@ -1073,12 +1043,12 @@ spec:
           valueFrom:
             secretKeyRef:
               key: redis-password
-              name: paperless-redis
+              name: paperless-redis-creds
         - name: REDIS_MASTER_PASSWORD
           valueFrom:
             secretKeyRef:
               key: redis-password
-              name: paperless-redis
+              name: paperless-redis-creds
         - name: REDIS_TLS_ENABLED
           value: "no"
         - name: REDIS_PORT
@@ -1246,6 +1216,32 @@ spec:
   template:
     metadata:
       name: paperless-oidc-secret
+      namespace: paperless
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: paperless-postgresql-creds
+  namespace: paperless
+spec:
+  encryptedData:
+    postgres-password: AgCp1dMtBm0tmIeuYgTai1qHDMb2i72P6sZzHbNvGNLOJ1xJCJ0u4qRsBtjUjCZ88u4Cd7CuF0tLOjLTiG/2rK46R9zBh+amqnWEUcKC49FzPB5YrZD5fgA0+yCuHtCtg1h6zUX3RICmbVeP1752Jruc354Y6pwHnNH/Mt4wCBo7hShn2PFHGJAGFsUOPql/CcJ2s0LlfoQMS4hpGCz7h1QmZI4o1L7K1/Nfcu4gje6CsnplhWvq2DIotnhcBUDGq7yh3GCJwW6O6M89ri6zxo011xeZ/aNM0DFD9dZGcEtk8ME+jLNQBCHd9I5tYkHqo9eQa929RKmjr6Hk570lXywCIrXb6/PHcx+esn11Mk3YcTiBUiFVza9F3ihUR+6xSvzJ6iv0wqFvWdtwZdNrwbWERnOqxi/GfR2AowcWrJyTpIXcjTBWSX7x+7lmS1+ylmT2lZoCXENZ+OAfLjVNeKbERlLj2qGg27XL9WJ6I1dSYTZ2TpEDZpNc0TOPnir0YtRL8MDH2UCmIkmT1IHl11Qt0OflrKjBeOO5KM1u1sbPXlYCAZnE+yDMI/moiit6KtJpIU2MQDhVxQfu/6fB4EEFL0Lsg7QEd1wBPxZi9GZ/0jipFNSPFWFoFmQxomvNyObHAmQeiAwNuhTGFCGVfhtlJUxTrahgWd43WbkkWJo05aIjDh1nVAABxQihfmpCHBRze3LrsBFLvA==
+  template:
+    metadata:
+      name: paperless-postgresql-creds
+      namespace: paperless
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: paperless-redis-creds
+  namespace: paperless
+spec:
+  encryptedData:
+    redis-password: AgBw/5BpHK3BRRgd8KqKNxqTvdbD/e2ox1JT68ch2+PYAJnKVYpWF4dePjz5FhR+/NPetW0NcdJ6awAy8iaBGyTLIR7FHE9M2ChuvhNLycWVSgGBZe1F/OfXkbqPyIUfKTl+k+ow6IzCc5hB9lZeABWz48k0yy5AKpYTovD4e3sS+mzRxV158HLz1QlMSZ0lTc8Ab8SDjDVPtcL01uTny65yEENE6XzREvraRGvWnVhx1ahJ6wg2gIb+Hcbl/axKtRDSjrWuynzvskBPhGfcIUusfq20em7OzQhr72T/uyyqKZlmuF9ijLvjfS+nT+BES1/I6rQl3cE5pgu1pMYWZT6X6G9ZR/jUtmSRldXzcx1KePPKrE9ip1Li7L5Pwnm8Y7I/VCEg3p6TPaARf9GTwKkPGSrDLcHt3pJl7Udair0k555FqWFLQ4SwFpvzLVnmM7ff6+7Tj4VwAYj4UG6UHMTavceeDcoCeWMVDFOvxfKF+FGu1uIKP0HlR6nqR49s1ExDue7Yeh4f1t76tIzaV4KkuxL1bFZqS5poWsaU0Y5CoWnjs/fWLTRi8NhIDg3XG1NjVNcDmJ3U75rKw/cUkcFfAk6rxdbaOBgULT4SMnmx0Gmf/mO0bTyYnT6dMZ5seLsFNpY/v06z5wFD/BfKsUPN7f5AsxhvfE4iz/Fujh+jvBOQMx5K770Sy4LrjepUDmOw0vhue8xqsxf/PMKua05U91fXHmGRK8AFQi0v
+  template:
+    metadata:
+      name: paperless-redis-creds
       namespace: paperless
 ---
 apiVersion: cilium.io/v2
