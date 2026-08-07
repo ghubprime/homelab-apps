@@ -45,6 +45,46 @@ jobs:
           find kustomize -path '*/plugins/*' -name '*.sh' -exec chmod +x {} +
           ./generate-manifests.sh --force
 
+      - name: Detect non-deterministic renders (credential churn)
+        run: |
+          # A chart that mints a random credential whenever its `lookup` of the
+          # live Secret comes back empty will emit different output on every
+          # render, because offline `kustomize build` in CI never has a cluster
+          # to look up. That silently rotated real credentials across six apps
+          # before anyone noticed — Nextcloud (postgres + admin), paperless
+          # (redis), photoprism (admin), Grafana (admin), CrowdSec (LAPI secret
+          # + registration token). See CHANGELOG 2026-08-06.
+          #
+          # Rendering twice from identical inputs turns that class of bug into a
+          # build failure. This deliberately tests determinism rather than
+          # pattern-matching for "secret-looking" lines: any non-determinism is
+          # a defect here, and matching on shape would both miss cases and
+          # produce false positives.
+          set -euo pipefail
+
+          if [ ! -d manifests ]; then
+            echo "::error::no manifests/ directory after render"
+            exit 1
+          fi
+
+          cp -a manifests "$RUNNER_TEMP/render-a"
+          ./generate-manifests.sh --force > /dev/null 2>&1
+
+          if diff -rq "$RUNNER_TEMP/render-a" manifests > "$RUNNER_TEMP/churn.diff" 2>&1; then
+            echo "✅ Render is deterministic — identical inputs produced identical manifests"
+          else
+            echo "::error::Render is NON-DETERMINISTIC. Identical inputs produced different manifests."
+            echo ""
+            echo "This is almost always a chart generating a random credential because its"
+            echo "cluster lookup returned empty. Committing it rotates a live credential on"
+            echo "every push. Fix by pinning the value with the chart's existingSecret option"
+            echo "and a SealedSecret carrying the value already live in the cluster."
+            echo ""
+            echo "Differing paths:"
+            cat "$RUNNER_TEMP/churn.diff"
+            exit 1
+          fi
+
       - name: Validate generated manifests
         run: |
           # globstar is OFF by default in the Actions bash; without it '**' collapses
