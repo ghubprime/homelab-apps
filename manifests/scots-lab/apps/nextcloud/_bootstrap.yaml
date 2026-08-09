@@ -641,11 +641,20 @@ spec:
               # --max-delete is the safety valve: if /data ever mounts empty or wrong,
               # sync would propagate mass deletion into the mirror. Instead it fails
               # loudly and the healthcheck fires.
+              # --exclude lost+found is REQUIRED, not cosmetic. Every one of these PVCs
+              # is an ext4 RBD volume, so it has a lost+found directory owned by root
+              # with mode 0700. This container runs as UID 1000, so opening it fails
+              # with EACCES; rclone counts that as an IO error and then refuses to
+              # complete the sync at all ("not deleting files as there were IO
+              # errors"), so the WHOLE backup fails. Verified live 2026-08-09 - the
+              # first test run failed with exactly this and nothing was copied.
+              # lost+found is fsck recovery space and is never worth restoring.
               rclone sync \
                 /data \
                 "GDrive:pvc-mirror/nextcloud/data" \
                 --backup-dir "GDrive:pvc-snapshots/nextcloud/data/$DATE" \
                 --config /tmp/rclone.conf \
+                --exclude "lost+found/**" \
                 --max-delete 500 \
                 --transfers 4 \
                 --checkers 8 \
