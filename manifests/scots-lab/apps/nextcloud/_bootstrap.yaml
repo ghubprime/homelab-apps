@@ -580,6 +580,148 @@ spec:
           storage: 20Gi
       storageClassName: ceph-block
 ---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app.kubernetes.io/component: pvc-backup
+    app.kubernetes.io/name: gdrive-backup
+    app.kubernetes.io/part-of: nextcloud
+  name: gdrive-pvc-backup-nextcloud-data
+  namespace: nextcloud
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: pvc-backup
+            app.kubernetes.io/name: gdrive-backup
+            app.kubernetes.io/part-of: nextcloud
+        spec:
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: app
+                    app.kubernetes.io/instance: nextcloud
+                    app.kubernetes.io/name: nextcloud
+                topologyKey: kubernetes.io/hostname
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - |
+              set -u
+              cp /config/rclone.conf /tmp/rclone.conf
+              DATE=$(date +%Y-%m-%d)
+              echo "=== Tier3B nextcloud/data -> GDrive @ $DATE ==="
+
+              # sync + --backup-dir, NOT `copy` into a dated folder.
+              #
+              # A dated full copy every night means N complete copies after N days. At
+              # the current ~1.2 GiB across these volumes, with the existing 180-day
+              # retention, that is ~200 GiB of Google Drive for data that barely changes
+              # — and it grows linearly as the libraries actually fill up.
+              #
+              # This keeps ONE current mirror plus per-day deltas:
+              #   GDrive:pvc-mirror/<app>/<vol>/           <- always matches the PVC
+              #   GDrive:pvc-snapshots/<app>/<vol>/<date>/ <- only what changed that day
+              #
+              # The archive path stays under pvc-snapshots so the EXISTING
+              # cronjob-retention-cleanup (prunes >180d) ages it out with no change. The
+              # mirror deliberately sits OUTSIDE that prefix, because that retention job
+              # is a blanket `rclone delete --min-age 180d` and would otherwise erode
+              # unchanged files straight out of the live copy.
+              #
+              # --max-delete is the safety valve: if /data ever mounts empty or wrong,
+              # sync would propagate mass deletion into the mirror. Instead it fails
+              # loudly and the healthcheck fires.
+              rclone sync \
+                /data \
+                "GDrive:pvc-mirror/nextcloud/data" \
+                --backup-dir "GDrive:pvc-snapshots/nextcloud/data/$DATE" \
+                --config /tmp/rclone.conf \
+                --max-delete 500 \
+                --transfers 4 \
+                --checkers 8 \
+                --log-level INFO \
+                --stats 60s \
+                --stats-one-line
+              EXIT_CODE=$?
+
+              # Rule #30: a backup nobody watches is not a backup. If HEALTHCHECK_URL
+              # is unset the job still succeeds, but says so loudly in the log.
+              if [ $EXIT_CODE -eq 0 ]; then
+                echo "=== nextcloud/data completed OK ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL" > /dev/null || true
+                else
+                  echo "WARNING: HEALTHCHECK_URL unset - this backup is UNMONITORED"
+                fi
+              else
+                echo "=== nextcloud/data FAILED (exit $EXIT_CODE) ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL/fail" > /dev/null || true
+                fi
+                exit $EXIT_CODE
+              fi
+            command:
+            - /bin/sh
+            - -c
+            env:
+            - name: HEALTHCHECK_URL
+              valueFrom:
+                secretKeyRef:
+                  key: healthcheck-url-nextcloud-data
+                  name: rclone-config
+                  optional: true
+            image: rclone/rclone:1.69
+            name: rclone
+            resources:
+              limits:
+                memory: 512Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+            - mountPath: /config
+              name: rclone-config
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /data
+              name: app-data
+              readOnly: true
+          restartPolicy: OnFailure
+          volumes:
+          - name: rclone-config
+            secret:
+              secretName: rclone-config
+          - emptyDir: {}
+            name: tmp
+          - name: app-data
+            persistentVolumeClaim:
+              claimName: nextcloud-nextcloud
+              readOnly: true
+  schedule: 40 4 * * *
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+---
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
@@ -636,6 +778,20 @@ spec:
     metadata:
       name: nextcloud-postgresql-creds
       namespace: nextcloud
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: rclone-config
+  namespace: nextcloud
+spec:
+  encryptedData:
+    rclone.conf: AgAXhjBoX4n5r/fnqCRztoiordVxpWW2ChgQfecYDA42FU7tbW4PmigrgJjIIZSkyiyEU2LwF2pSP5enZ+7I9pOTLC1kxqQCcBqz5fgLzjm0R2gbpwMNC4xYQqTsoefoJNGeZaYBERPbwlWt2cJdU6KqfROROdOsJHmtyIXaJC/KicfcUWSfc0Yd3s5pMRP55YX+/rLE4U4FCDUtrPisJ80E8Ki5C50GK/RYfs17jFWX503UAq/hhXcDAuytCqUxOBmorKco6hohW/yaQeEKUoj9/NyihUgTzDX3lk3oL9miFeTr+eQgWsHwHjEl0w9EL1LLR4p7+FL5pWUqDDjtVkfCbOpL64pQhLixgnK5ff7EOMM+SWNLjU9DI4pK1FUwvQFPEEnA5vZdQJzFzgTn86GiKivtOFmFbhcyk2fCuFAZqOUYRwu1VUB8ErpFjN7VflZU3ULdz28I+jCOMVdmiT/oZNbFXnhcRYZnOWMd7T/tj42isDgaof3E66bwVf0yAoevVP6w+9DkAHKgUSpZ5U/1nxKfZa9PpwvspNEll7kAOHjDRGHZ8+7N/EH2nrFoo1kM4CgU9lNH52tACRGaTfWkHKFRpKgGer449ckhhGx+DiUECP6QbGs9FmcmVCB8ZEvZScHC93+AwdALYS1v5IaPme0owqC2xuQOMmBvZ0TpudEzQ6Gmr3it9csSSogYMwMPKsQBL4UWQEaPcvVNgtfQaEg1qxSBmls0AeWtqmncBTTGm0GpDsudCz4UcJl3vjlfDuK5cSCPhy4gMbC/YPxRa0Vn8JIArPCIYwQT5yTHf3e56iKsp6TRrLZj1I2agp7386hXSVJmms+vDHjJzCCc2KIM4doR4rgMhRfV3t8mI/FTimFul/s/54IuNc/UI8TrtlZAKtU0zVGQ0bw+BPbn+UN0lWG3XDdhnNtC9dcSJQ8XD/FDWHhefsJ7X3Hc9T63PGC+N1ml9f72b7hN2jhS14v4nR/c92r2EEaFcgxv/H4f60dr6RXMk20tdUOHdrAUOgrs5GX6HNauwB/pnZvWncNifZEK9yxGIPtxwjV38iJNj80NyQtO3UJVqboNJ26DbHXmrIHYN5LzJla+SZDm0Vc9LcxGzGZ8oxtewG5VbvCx4qC6jk02u7UnlhXkDFpi8ykaq0yL/39LECKLdWWf8R+TZ7gYT+oFMzoLma73Uhx36YDy80t6VUM6vZBgT90XydNvrLRuRvnV9f3zHB3vI5L02xXJ0fLiMcJuDiRffDYcWUQs3BbCZVrYYrn6yq98ZNo2talZZ6dDWLTcvs5dwaa05aHMpYPCi3bc3//Gq4dKYDJyW6wUP1Z+BV7lPavgF+Uwcti0QwXZ1envaL4ZA24ZpZ7T2aUmhxt7Rn2uO+8cz5MLXZzoFpzJqt1QQ3psuehxO4KsT30HWNA06FotCM93XLqaFo2FbXCtsqaRS7FTrRj9X5UxOys9IWr/9bG5sE9lxtrvlG3W5Id5VFWCtPity6ljhtUDugic5plyDp8bfu9cdgz8HDcRwtdc/QIIoxGjL4tsXGh98rH93uhWfZXdfFk/OkKwSwOCxx4BjsullL3nrrN5dipyq0Zf+xRUQWiTlpVyNxf9O2Kpi/uJLk0jX5uV+Vri+i9Uzb1TLg3OemjaM2ThAifliVDyhj2WV8UooFwDJxHb0ZgOBt18XhgEM8db9l7CtFJrVwMdRf65ipi+ZyfsPaY7ovMjo+1zMtqN2pc7S6Sh82Rs8TW8rdpAM5QosP5RO3nwv73Q8zUvou6i0Z1ppiEB9g/6zcq4tVuvXKqwdzzwpmOIL9dnpNPMkO9kPg0iVxOa1Cqw5q/z0YaVuYZ3s2OfR7sSuDU5IODbcxH10sNVK/2hhjBQMyp+5QjEY4Bf+ES6YlTbNCCqpv3JKs3LpER65x/ChBk+GpcfiuMoX6aWoPGHWcrooY4zPDwhVL4ObH5qlAI=
+  template:
+    metadata:
+      name: rclone-config
+      namespace: nextcloud
+    type: Opaque
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

@@ -228,6 +228,288 @@ spec:
         persistentVolumeClaim:
           claimName: photoprism-photoprism-storage
 ---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app.kubernetes.io/component: pvc-backup
+    app.kubernetes.io/name: gdrive-backup
+    app.kubernetes.io/part-of: photoprism
+  name: gdrive-pvc-backup-photoprism-originals
+  namespace: photoprism
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: pvc-backup
+            app.kubernetes.io/name: gdrive-backup
+            app.kubernetes.io/part-of: photoprism
+        spec:
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: photoprism
+                    app.kubernetes.io/name: photoprism
+                topologyKey: kubernetes.io/hostname
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - |
+              set -u
+              cp /config/rclone.conf /tmp/rclone.conf
+              DATE=$(date +%Y-%m-%d)
+              echo "=== Tier3B photoprism/originals -> GDrive @ $DATE ==="
+
+              # sync + --backup-dir, NOT `copy` into a dated folder.
+              #
+              # A dated full copy every night means N complete copies after N days. At
+              # the current ~1.2 GiB across these volumes, with the existing 180-day
+              # retention, that is ~200 GiB of Google Drive for data that barely changes
+              # — and it grows linearly as the libraries actually fill up.
+              #
+              # This keeps ONE current mirror plus per-day deltas:
+              #   GDrive:pvc-mirror/<app>/<vol>/           <- always matches the PVC
+              #   GDrive:pvc-snapshots/<app>/<vol>/<date>/ <- only what changed that day
+              #
+              # The archive path stays under pvc-snapshots so the EXISTING
+              # cronjob-retention-cleanup (prunes >180d) ages it out with no change. The
+              # mirror deliberately sits OUTSIDE that prefix, because that retention job
+              # is a blanket `rclone delete --min-age 180d` and would otherwise erode
+              # unchanged files straight out of the live copy.
+              #
+              # --max-delete is the safety valve: if /data ever mounts empty or wrong,
+              # sync would propagate mass deletion into the mirror. Instead it fails
+              # loudly and the healthcheck fires.
+              rclone sync \
+                /data \
+                "GDrive:pvc-mirror/photoprism/originals" \
+                --backup-dir "GDrive:pvc-snapshots/photoprism/originals/$DATE" \
+                --config /tmp/rclone.conf \
+                --max-delete 500 \
+                --transfers 4 \
+                --checkers 8 \
+                --log-level INFO \
+                --stats 60s \
+                --stats-one-line
+              EXIT_CODE=$?
+
+              # Rule #30: a backup nobody watches is not a backup. If HEALTHCHECK_URL
+              # is unset the job still succeeds, but says so loudly in the log.
+              if [ $EXIT_CODE -eq 0 ]; then
+                echo "=== photoprism/originals completed OK ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL" > /dev/null || true
+                else
+                  echo "WARNING: HEALTHCHECK_URL unset - this backup is UNMONITORED"
+                fi
+              else
+                echo "=== photoprism/originals FAILED (exit $EXIT_CODE) ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL/fail" > /dev/null || true
+                fi
+                exit $EXIT_CODE
+              fi
+            command:
+            - /bin/sh
+            - -c
+            env:
+            - name: HEALTHCHECK_URL
+              valueFrom:
+                secretKeyRef:
+                  key: healthcheck-url-photoprism-originals
+                  name: rclone-config
+                  optional: true
+            image: rclone/rclone:1.69
+            name: rclone
+            resources:
+              limits:
+                memory: 512Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+            - mountPath: /config
+              name: rclone-config
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /data
+              name: app-data
+              readOnly: true
+          restartPolicy: OnFailure
+          volumes:
+          - name: rclone-config
+            secret:
+              secretName: rclone-config
+          - emptyDir: {}
+            name: tmp
+          - name: app-data
+            persistentVolumeClaim:
+              claimName: photoprism-photoprism-originals
+              readOnly: true
+  schedule: 40 3 * * *
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app.kubernetes.io/component: pvc-backup
+    app.kubernetes.io/name: gdrive-backup
+    app.kubernetes.io/part-of: photoprism
+  name: gdrive-pvc-backup-photoprism-storage
+  namespace: photoprism
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: pvc-backup
+            app.kubernetes.io/name: gdrive-backup
+            app.kubernetes.io/part-of: photoprism
+        spec:
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: photoprism
+                    app.kubernetes.io/name: photoprism
+                topologyKey: kubernetes.io/hostname
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - |
+              set -u
+              cp /config/rclone.conf /tmp/rclone.conf
+              DATE=$(date +%Y-%m-%d)
+              echo "=== Tier3B photoprism/storage -> GDrive @ $DATE ==="
+
+              # sync + --backup-dir, NOT `copy` into a dated folder.
+              #
+              # A dated full copy every night means N complete copies after N days. At
+              # the current ~1.2 GiB across these volumes, with the existing 180-day
+              # retention, that is ~200 GiB of Google Drive for data that barely changes
+              # — and it grows linearly as the libraries actually fill up.
+              #
+              # This keeps ONE current mirror plus per-day deltas:
+              #   GDrive:pvc-mirror/<app>/<vol>/           <- always matches the PVC
+              #   GDrive:pvc-snapshots/<app>/<vol>/<date>/ <- only what changed that day
+              #
+              # The archive path stays under pvc-snapshots so the EXISTING
+              # cronjob-retention-cleanup (prunes >180d) ages it out with no change. The
+              # mirror deliberately sits OUTSIDE that prefix, because that retention job
+              # is a blanket `rclone delete --min-age 180d` and would otherwise erode
+              # unchanged files straight out of the live copy.
+              #
+              # --max-delete is the safety valve: if /data ever mounts empty or wrong,
+              # sync would propagate mass deletion into the mirror. Instead it fails
+              # loudly and the healthcheck fires.
+              rclone sync \
+                /data \
+                "GDrive:pvc-mirror/photoprism/storage" \
+                --backup-dir "GDrive:pvc-snapshots/photoprism/storage/$DATE" \
+                --config /tmp/rclone.conf \
+                --max-delete 500 \
+                --transfers 4 \
+                --checkers 8 \
+                --log-level INFO \
+                --stats 60s \
+                --stats-one-line
+              EXIT_CODE=$?
+
+              # Rule #30: a backup nobody watches is not a backup. If HEALTHCHECK_URL
+              # is unset the job still succeeds, but says so loudly in the log.
+              if [ $EXIT_CODE -eq 0 ]; then
+                echo "=== photoprism/storage completed OK ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL" > /dev/null || true
+                else
+                  echo "WARNING: HEALTHCHECK_URL unset - this backup is UNMONITORED"
+                fi
+              else
+                echo "=== photoprism/storage FAILED (exit $EXIT_CODE) ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL/fail" > /dev/null || true
+                fi
+                exit $EXIT_CODE
+              fi
+            command:
+            - /bin/sh
+            - -c
+            env:
+            - name: HEALTHCHECK_URL
+              valueFrom:
+                secretKeyRef:
+                  key: healthcheck-url-photoprism-storage
+                  name: rclone-config
+                  optional: true
+            image: rclone/rclone:1.69
+            name: rclone
+            resources:
+              limits:
+                memory: 512Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+            - mountPath: /config
+              name: rclone-config
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /data
+              name: app-data
+              readOnly: true
+          restartPolicy: OnFailure
+          volumes:
+          - name: rclone-config
+            secret:
+              secretName: rclone-config
+          - emptyDir: {}
+            name: tmp
+          - name: app-data
+            persistentVolumeClaim:
+              claimName: photoprism-photoprism-storage
+              readOnly: true
+  schedule: 40 3 * * *
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+---
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
@@ -253,6 +535,20 @@ spec:
     metadata:
       name: photoprism-oidc-secret
       namespace: photoprism
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: rclone-config
+  namespace: photoprism
+spec:
+  encryptedData:
+    rclone.conf: AgA644CypyYbr23Y2wzQ/GATChAfieqCMK9RZlIYBO/CxL+38B21kydmFQqTpCR+8YtaEvdRkiUaIdPo0PVTbEehHSvAXaOXsQlsjqSZQntzsQhw/QK6S6V48I63LXX+cLscz/OHM39EEnAlM031OAEwUqRHVa8o5iPjzFp5T7o/BmqxANzfXu2ZTuofhKVt9QfPUyjAvi6Rd9dQmHdUznfUCmgZehA/YrOxMcKJVCucZTn7ywFeslwwq+CCQ0ujNkkPR5Dl0iKbjLX4WP8H4t1nkNRNCdwVHb64hFkG7TuPtfwSoBzKzASaIZR8nfV4jfRU7QTduZHcm/wbRC7mE8bjDQ+fCsgaLit7pWmc34GlW1FNBThqoTWL8xvsqq26IAgvxSU3mXvJ9Rraw3NJfPXF55C6D/N9XWpDCc3JNkvWoRVedmHHA9ICq2Pm84LNjJBgMsFTG+fLTqtRqW1OEcBnGZ2mSaqkr+/Yl5q3t7yJLpYwbbv/QmE/6mSdwJT0FqHMgldCSw7L3arcTzpFNpB35S/6cPklIQ5Ws6LvgKcsUeZu9IathNcZoa2kc48sEih1bgsoqxbr2gZEAlDwc/WOBTa+W17EQD7ARFzhj+Sa9JHnUiHiDX4kWFK2urBd4GFyFTvV0h6Q+pLrlxnQNabyQy8dGxIjrSTREbrAyXu1qBDtud8EXrfT8yQQTkbCk1Ye0B7Rk1AmN5CPnxOmmsH36zNu3srZKKS4JxcjWLLSHDdpPaDRS/jxk/V1Wc376k2cA7iDdvSbdBghoFtfmqzGLtN9LNP0WblkWyI1UAO198G9Un7nVBrPe9ukvQG8WyCB7eN5ih8KWW3asBRw4R98FJxPhilbh2ynMm3mgpIJE6LmIFiCm343s7HZL9bsxvUUgDkjbBvnpkBT6THjkkjtVgmKLXb4/L7KEYsfqtN6oE5b9fnZM4Da+9TTCP7wfBVtCHgt51Mn3tTeMD3bkEUF1pbeuiDOSDj5TA9f1KPw3exdS6RFMAau67+LPKYpMfjGV6/NMlLJvvxjQiblQ+8DjWMoxjKZN+ibl1t9T1TLJaleY/XcZTt8UqtumA6QeMyyWlASWjquMfL5IwuRt6882G92DEBbSOXJsXAT14NyVulZ/A01ih5TEGHIBCbjplLbLRWUZeL45uOMvg9kSKfsFH4ZHLi89oVasNYVLimw5IsgNa3Sz69J68KfzNT1R+CyQEWAtL3/4ZxbXtKvMah1UnR8w34XWVt/NdPmKYY9ByYScfK6DgqKqXGT9WpB+Ju4zEW1z0vPI3ajzx86uRKzALidynaSrW9FiqW6D9ktKx4yGNJzdw64PZivADwu7H3Xdr2q+1uWn7er6H2DJdGEbg9wHiMGl+43xTNYauURumP2mCE7CPGIZW2hamhgHUm+QYEqaFklbf8BYqoqSIOc7/mAYSPIAHTpnpDUxSwNjRIX2GED8P8gn37qi/CLZu84HYYBXMa7slBI2XJ4ldityYmKyp1Iptcb4/tf5d9LieY5qGB1ARm37Vhb4EDw4BCcrvwuBO8t34/hY3Pi4vXBY7nkgVOnQ9variZfDkcOXKZbqLGfzbHU/axGeYJH7ncRb4xDKoqpSISYlUQoDvrTXplCY2vEQN+DJAVUIGf7EnyMGPHxSO/0ACAMXXkU9860leuy81YZYamA5Zi1BWYb1QIu6l4oRFZA9FW8OUtX+wU2wLGUzrlCbOZxhQ9aYPMzn+xRnX5zobNZy3EvCXpRmOF3QDZpnJFbD8uB/E6bFWVQ/4wRyiGGNamxGejBuxWFVPyd4iwtZqFcLCD/43h8Rseo7uUZMCjgMYDRu+rTm5n8egwSHNiXW+Tal9Sx9z09N/hP5evWAIuZgelVzzQ458sMhx/UFjARHAjC8+iQDAb05Jw8C3sAYexWDsdeG01cPU6sK9Z6Vc/W0dud2sV5L1K9lUSxHdGsdnxP8vs=
+  template:
+    metadata:
+      name: rclone-config
+      namespace: photoprism
+    type: Opaque
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

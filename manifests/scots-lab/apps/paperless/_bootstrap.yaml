@@ -1165,6 +1165,288 @@ spec:
         requests:
           storage: 8Gi
 ---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app.kubernetes.io/component: pvc-backup
+    app.kubernetes.io/name: gdrive-backup
+    app.kubernetes.io/part-of: paperless
+  name: gdrive-pvc-backup-paperless-export
+  namespace: paperless
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: pvc-backup
+            app.kubernetes.io/name: gdrive-backup
+            app.kubernetes.io/part-of: paperless
+        spec:
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: paperless
+                    app.kubernetes.io/name: paperless-ngx
+                topologyKey: kubernetes.io/hostname
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - |
+              set -u
+              cp /config/rclone.conf /tmp/rclone.conf
+              DATE=$(date +%Y-%m-%d)
+              echo "=== Tier3B paperless/export -> GDrive @ $DATE ==="
+
+              # sync + --backup-dir, NOT `copy` into a dated folder.
+              #
+              # A dated full copy every night means N complete copies after N days. At
+              # the current ~1.2 GiB across these volumes, with the existing 180-day
+              # retention, that is ~200 GiB of Google Drive for data that barely changes
+              # — and it grows linearly as the libraries actually fill up.
+              #
+              # This keeps ONE current mirror plus per-day deltas:
+              #   GDrive:pvc-mirror/<app>/<vol>/           <- always matches the PVC
+              #   GDrive:pvc-snapshots/<app>/<vol>/<date>/ <- only what changed that day
+              #
+              # The archive path stays under pvc-snapshots so the EXISTING
+              # cronjob-retention-cleanup (prunes >180d) ages it out with no change. The
+              # mirror deliberately sits OUTSIDE that prefix, because that retention job
+              # is a blanket `rclone delete --min-age 180d` and would otherwise erode
+              # unchanged files straight out of the live copy.
+              #
+              # --max-delete is the safety valve: if /data ever mounts empty or wrong,
+              # sync would propagate mass deletion into the mirror. Instead it fails
+              # loudly and the healthcheck fires.
+              rclone sync \
+                /data \
+                "GDrive:pvc-mirror/paperless/export" \
+                --backup-dir "GDrive:pvc-snapshots/paperless/export/$DATE" \
+                --config /tmp/rclone.conf \
+                --max-delete 500 \
+                --transfers 4 \
+                --checkers 8 \
+                --log-level INFO \
+                --stats 60s \
+                --stats-one-line
+              EXIT_CODE=$?
+
+              # Rule #30: a backup nobody watches is not a backup. If HEALTHCHECK_URL
+              # is unset the job still succeeds, but says so loudly in the log.
+              if [ $EXIT_CODE -eq 0 ]; then
+                echo "=== paperless/export completed OK ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL" > /dev/null || true
+                else
+                  echo "WARNING: HEALTHCHECK_URL unset - this backup is UNMONITORED"
+                fi
+              else
+                echo "=== paperless/export FAILED (exit $EXIT_CODE) ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL/fail" > /dev/null || true
+                fi
+                exit $EXIT_CODE
+              fi
+            command:
+            - /bin/sh
+            - -c
+            env:
+            - name: HEALTHCHECK_URL
+              valueFrom:
+                secretKeyRef:
+                  key: healthcheck-url-paperless-export
+                  name: rclone-config
+                  optional: true
+            image: rclone/rclone:1.69
+            name: rclone
+            resources:
+              limits:
+                memory: 512Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+            - mountPath: /config
+              name: rclone-config
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /data
+              name: app-data
+              readOnly: true
+          restartPolicy: OnFailure
+          volumes:
+          - name: rclone-config
+            secret:
+              secretName: rclone-config
+          - emptyDir: {}
+            name: tmp
+          - name: app-data
+            persistentVolumeClaim:
+              claimName: paperless-paperless-ngx-export
+              readOnly: true
+  schedule: 10 4 * * *
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app.kubernetes.io/component: pvc-backup
+    app.kubernetes.io/name: gdrive-backup
+    app.kubernetes.io/part-of: paperless
+  name: gdrive-pvc-backup-paperless-media
+  namespace: paperless
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: pvc-backup
+            app.kubernetes.io/name: gdrive-backup
+            app.kubernetes.io/part-of: paperless
+        spec:
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: paperless
+                    app.kubernetes.io/name: paperless-ngx
+                topologyKey: kubernetes.io/hostname
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - |
+              set -u
+              cp /config/rclone.conf /tmp/rclone.conf
+              DATE=$(date +%Y-%m-%d)
+              echo "=== Tier3B paperless/media -> GDrive @ $DATE ==="
+
+              # sync + --backup-dir, NOT `copy` into a dated folder.
+              #
+              # A dated full copy every night means N complete copies after N days. At
+              # the current ~1.2 GiB across these volumes, with the existing 180-day
+              # retention, that is ~200 GiB of Google Drive for data that barely changes
+              # — and it grows linearly as the libraries actually fill up.
+              #
+              # This keeps ONE current mirror plus per-day deltas:
+              #   GDrive:pvc-mirror/<app>/<vol>/           <- always matches the PVC
+              #   GDrive:pvc-snapshots/<app>/<vol>/<date>/ <- only what changed that day
+              #
+              # The archive path stays under pvc-snapshots so the EXISTING
+              # cronjob-retention-cleanup (prunes >180d) ages it out with no change. The
+              # mirror deliberately sits OUTSIDE that prefix, because that retention job
+              # is a blanket `rclone delete --min-age 180d` and would otherwise erode
+              # unchanged files straight out of the live copy.
+              #
+              # --max-delete is the safety valve: if /data ever mounts empty or wrong,
+              # sync would propagate mass deletion into the mirror. Instead it fails
+              # loudly and the healthcheck fires.
+              rclone sync \
+                /data \
+                "GDrive:pvc-mirror/paperless/media" \
+                --backup-dir "GDrive:pvc-snapshots/paperless/media/$DATE" \
+                --config /tmp/rclone.conf \
+                --max-delete 500 \
+                --transfers 4 \
+                --checkers 8 \
+                --log-level INFO \
+                --stats 60s \
+                --stats-one-line
+              EXIT_CODE=$?
+
+              # Rule #30: a backup nobody watches is not a backup. If HEALTHCHECK_URL
+              # is unset the job still succeeds, but says so loudly in the log.
+              if [ $EXIT_CODE -eq 0 ]; then
+                echo "=== paperless/media completed OK ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL" > /dev/null || true
+                else
+                  echo "WARNING: HEALTHCHECK_URL unset - this backup is UNMONITORED"
+                fi
+              else
+                echo "=== paperless/media FAILED (exit $EXIT_CODE) ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL/fail" > /dev/null || true
+                fi
+                exit $EXIT_CODE
+              fi
+            command:
+            - /bin/sh
+            - -c
+            env:
+            - name: HEALTHCHECK_URL
+              valueFrom:
+                secretKeyRef:
+                  key: healthcheck-url-paperless-media
+                  name: rclone-config
+                  optional: true
+            image: rclone/rclone:1.69
+            name: rclone
+            resources:
+              limits:
+                memory: 512Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+            - mountPath: /config
+              name: rclone-config
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /data
+              name: app-data
+              readOnly: true
+          restartPolicy: OnFailure
+          volumes:
+          - name: rclone-config
+            secret:
+              secretName: rclone-config
+          - emptyDir: {}
+            name: tmp
+          - name: app-data
+            persistentVolumeClaim:
+              claimName: paperless-paperless-ngx-media
+              readOnly: true
+  schedule: 10 4 * * *
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -1243,6 +1525,20 @@ spec:
     metadata:
       name: paperless-redis-creds
       namespace: paperless
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: rclone-config
+  namespace: paperless
+spec:
+  encryptedData:
+    rclone.conf: AgBpNGGTn6vipOz5UVyyplHNLq3mnb011BftY9sGsvPV9VSAmC/aInEdx5hHW6sKxY1Txu99JuMCO9NJexxbgzn99/M81OdJbvAAAI6BUWPcCkvoMR7cdS9TdDS9cS0x/VYslbHzF1zweOOOoLYfNIqZ3ct4KiNI38VeQCu2iGcQpLV//pRgamyPtcjZXKk5vLbaj5TIAurePJIkbMR+tRvkeAWP7E6+bCSi44t0HHry+sfORIlwSDikNE1a8JqfuqpI6oGgWM1QU/AlcjUJ4p09AfCGIeKqEyTkbILD6JBTKSN763ZXchT/4tVI+A6J6ZJ+JjTX+uydX17czQ1+umfHx6ROYxckWUrRLAHlELAjt+zUOCRYZgQ6d/SH62iN4IaspaKwiIMASNdtUpEgB8r3Za7/Gx+tOXSHPPi7gsnNFwIyVZyahlfZMzureBF3hGlIgJTlzxkRWmRhjwYaTnjFdJXo1u9FkWCO9pkNo9vlwQmOq1n38sElb4HisEVygk3/fmm+pcu8rxB+0nBwl8+faDGo2F3oglNvjQp/xDsehUSGwD2l3R9q5DKIir8QCzfxxmZj0tauioZ4L/Ay80A2rL4uAuhB5QbabFaxNJz5bvrmL3zqcKX4Orol1DPUD84oG7wG+0OXdZMF+Zv7Q1/+dAswd/LpDCuoucwY83Mfp+oCnWpoMA2PWAy2ziswnMuHZOawKusJAGRvqMNgafZsoWR+NB2E50tDB/CTg4RT5brhstsHdKTnbxlO7qzLrcTbKdLPJ1hDNVvADDzUFx6qCSxawMBtVmMRHhLN0Ps2IfJZaUi2Oe8Wf1FoJKQfvMqehoE0X3doBT4qzNTzuAStpFPBcAt7ThKU7rI2T9ufGQh7M+e90ZVDCTAvbZdZW2tMbtrXxivBK45PDSStuQ1JH3nx7DP3JODHYT5mFtpJMUFVEVNhL/FK+l2ADYU5187hIooT5KVR/sW8thWANUTyRBL9i9XATmaSqqUUOAaMM5V8FqPQuC0HWAUWBuok9doWb6eqzQEr+iGJ2Jpg0JwD1fNF2LEq00ouz1JFT9TBji+xx+9NJtlb//X3yPBjEJMMc7h4ex8sJeVIU2I07whlmU4mKnhW+AkAZd0Qkg1hhUACum2jzzrTUtqlDCi0aI+zwlDvHgIaSQbrWvFpGaoc/D/sQaQFT0ETL9AeBoGtaDGnnqrccVWbwuAK+6NKDX029GON/QvsKdnwR4w4cc9KzRq4txQVmd6N1QKRd27gqul7jriheKE05PWrRWsD32N8/7SQddUG3Cqj7k+8r9i2DUAOzpkEHAL+uGzBExj9m8L0iOyrv3EKUfJrGOwfNG91pjnpENJdon4WDCr71ucIQR7919yaLncfymTDOwIrFrecU5I82nevmFZRFSZAdqMAqX/QEpdL5cd5dhd4auAB7CtEaX/0hqCwXcBjciHZzecbo7hJPZ9OdqAF/2upX0CjK+uawyxbqLnMBGU94F4v+R6WgdVqBd78C8TLe6eVWj5hAi6+GV9jt2bxb0BtAZtrA/iayq/41S/dcPnCMUXzBna0RtzNjl4iSzL1EqvpOXIHFHUj4OxkOqgW2iWxoAZK1oW7VrHwEMvfsIFj5xnWrAsMJ2qSFAWU+B1k3vDENTKF5FBFsd2tJ1lv/red8zffehw3eOoVHO7JJox78eVt0yyl1r1VE8MoWXdAuqBbLR7gdlCQJfcoVWd7Nk13gyfY2Hr9wxPA7qiiDwfQPfFAwkLTHhW2xqy9PGzpSLq8ZYmfyXznQEfEJ8gmFm10ujhLpa7ccMqw6Dt1tLLVor19uvtk3bFlG4zVUX4+w/+DXN6n2u3Fm2KjvKlleDylBlnEETfhNjkDMsAWxyx0KyXWIMLcft4yA9PbVisfKuZMM8MbkEsEcG2hoof/WLEv+INdB5E/3LHS8IdPmTJ6IH8s2eA34fZfgHXRMoLR15Y=
+  template:
+    metadata:
+      name: rclone-config
+      namespace: paperless
+    type: Opaque
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

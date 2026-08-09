@@ -365,6 +365,161 @@ spec:
         persistentVolumeClaim:
           claimName: immich-postgres-pvc
 ---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app.kubernetes.io/component: pvc-backup
+    app.kubernetes.io/name: gdrive-backup
+    app.kubernetes.io/part-of: immich
+  name: gdrive-pvc-backup-immich-library
+  namespace: immich
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: pvc-backup
+            app.kubernetes.io/name: gdrive-backup
+            app.kubernetes.io/part-of: immich
+        spec:
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: immich
+                    app.kubernetes.io/name: server
+                topologyKey: kubernetes.io/hostname
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - |
+              set -u
+              cp /config/rclone.conf /tmp/rclone.conf
+              DATE=$(date +%Y-%m-%d)
+              echo "=== Tier3B immich/library -> GDrive @ $DATE ==="
+
+              # sync + --backup-dir, NOT `copy` into a dated folder.
+              #
+              # A dated full copy every night means N complete copies after N days. At
+              # the current ~1.2 GiB across these volumes, with the existing 180-day
+              # retention, that is ~200 GiB of Google Drive for data that barely changes
+              # — and it grows linearly as the libraries actually fill up.
+              #
+              # This keeps ONE current mirror plus per-day deltas:
+              #   GDrive:pvc-mirror/<app>/<vol>/           <- always matches the PVC
+              #   GDrive:pvc-snapshots/<app>/<vol>/<date>/ <- only what changed that day
+              #
+              # The archive path stays under pvc-snapshots so the EXISTING
+              # cronjob-retention-cleanup (prunes >180d) ages it out with no change. The
+              # mirror deliberately sits OUTSIDE that prefix, because that retention job
+              # is a blanket `rclone delete --min-age 180d` and would otherwise erode
+              # unchanged files straight out of the live copy.
+              #
+              # --max-delete is the safety valve: if /data ever mounts empty or wrong,
+              # sync would propagate mass deletion into the mirror. Instead it fails
+              # loudly and the healthcheck fires.
+              rclone sync \
+                /data \
+                "GDrive:pvc-mirror/immich/library" \
+                --backup-dir "GDrive:pvc-snapshots/immich/library/$DATE" \
+                --config /tmp/rclone.conf \
+                --max-delete 500 \
+                --transfers 4 \
+                --checkers 8 \
+                --log-level INFO \
+                --stats 60s \
+                --stats-one-line
+              EXIT_CODE=$?
+
+              # Rule #30: a backup nobody watches is not a backup. If HEALTHCHECK_URL
+              # is unset the job still succeeds, but says so loudly in the log.
+              if [ $EXIT_CODE -eq 0 ]; then
+                echo "=== immich/library completed OK ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL" > /dev/null || true
+                else
+                  echo "WARNING: HEALTHCHECK_URL unset - this backup is UNMONITORED"
+                fi
+              else
+                echo "=== immich/library FAILED (exit $EXIT_CODE) ==="
+                if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL/fail" > /dev/null || true
+                fi
+                exit $EXIT_CODE
+              fi
+            command:
+            - /bin/sh
+            - -c
+            env:
+            - name: HEALTHCHECK_URL
+              valueFrom:
+                secretKeyRef:
+                  key: healthcheck-url-immich-library
+                  name: rclone-config
+                  optional: true
+            image: rclone/rclone:1.69
+            name: rclone
+            resources:
+              limits:
+                memory: 512Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+            - mountPath: /config
+              name: rclone-config
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /data
+              name: app-data
+              readOnly: true
+          restartPolicy: OnFailure
+          volumes:
+          - name: rclone-config
+            secret:
+              secretName: rclone-config
+          - emptyDir: {}
+            name: tmp
+          - name: app-data
+            persistentVolumeClaim:
+              claimName: immich-library-pvc
+              readOnly: true
+  schedule: 10 3 * * *
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: rclone-config
+  namespace: immich
+spec:
+  encryptedData:
+    rclone.conf: AgA9xXixQ0aJ93avawBsstftuQ7+YbG9/bYIN5iVuai8Yr1/xn0mmn+wJlx+0kV+Nd2SRRZR5laBeBsNLreINkWi2tXfZ81lQGmtQwRPQsLA42V6ayPBpRZuEjue8G+DVUFvWL+ptLBFt6jTTxU6CJ4rw9YPvhMsJ46It1rLWWk/Nmpaf1BgBar4urYzTKG2b5/3d3zRJsxE75Gj8/+i0IVaGzo5E5QNM8uOpmDdkI0UQ9ETD4Lx11xaOhmiPO5CoLFcDEhaKaOp9geAPJVXrKioS3tC2YswAP9DdYiNwZDzB13HIZTCnBXjEplaGMmXV063OgPdTzh6cM9LGJFsi1FFDglQQrfu1AxNUniLcNjIV4hFB4V4/Jh1XwuzKIBFE6+a/O43X+UsyMYSJahlv99AVEkby5ZjvIux6KX1rFcJTcweWH25rAHMwUwDu5vyeW0Q11tZ21MG0yZ0Xv2DbIiXrCWHc78fNozRaU2l+4JnBJah6CmMevsmEPQadSvxODsJnG86La/ZSz7SARzfpDofg0wbjlHkV3pWw/jEk03UyFQJg1c0D0pPJqeAVSIxUyHR2VKmtbofo44CFO4BrrLC/0wgWed/AevJvISoOa8gUgfrC0uM4tm4VrkwDBqAPNB1MLVcyh3v5h6EPrPNdeUF5Kwmg2wbcNsN773taOWrblLPKcoKnK7YxJMviJTXfqVR6mxSWkpdsocGJe4vfCAJLFuzKOVClMqnwwr+QFct02WjyGxQvqfjjTCsKdAcTomTl5RxwTRlYUdiv8f8rPTTy2fu+D2mL4pUucEOWhBpr9yRNW9xHcNLIjRxtXGXuDnIwFXJvRFlmQc8SktBCV0QHBSjGxfD/URfS30/qOQtPIS1zm/RtKBLvtgP5LISaAJYjhj0xRzdEppqWBCJdj2CaKKNJr7cn8FjQ6p4naNLxixY0Fa252tzzBTWEEmQpMfLNHYJ5mGEsPbKC6+mc38ckNUsXoaxjabz/KKegQTLymuY8iZQvaZgWhT2nc3JnzBaBOW6IArToBroqErxTN7B1W4kxTbP5mvCyL7Ln921rYND5dIYTzzJz/bC5/WJqVTnWjOv3u/CxrAOoeTHHHWesDKjEXJdQHZkdFfljr7ePmVEh73paRuDpR10zzBdaafww30FF2RDVcRw71A094GPYeiu2dl76+YilZx+5xx4FtDZQDBrDYTNxna0OJiM6opNeKCtOwowdMF2OI2igEteZDcfgzf/YKbGdqjH57mt5Xy20uDKt2rsn1/hLmkh5S/eTNYaqesukXM8/QH+H0JIlQmeMQObLPVL1PJU7otV3XPcUsmaIjgBG0x+UTEY5o54mnAdwFK4u2W32F5YmSz5LBqfYTTIs67OOl8+0NPpADzflwHUgE99ERjIH3zB74wc3so0jo7gBekFftrRzsm/9r7qaOWSq3c1HdbR6Fl+kDnn9D8o5XhZL3LmxM0+JQ18mUSgHX/2LcQlRBUUfrpXWjSvxCnp6oX/5xOd0hjB0GBGn+mwbbKq+bDX20tx+M13+amofHi1d6Rvr/pPBnA3PO//g3JjE7QD7Qk9SHs/3vXWL3Z1p4IrZXffJKqrI2sLgRQBov8uFxRWmH/ZFcq4BnJCDo/ycURWANnalNxusFFIQmNkfd5FcZ+vtvzMhoy6iwf83OKXvi9hsvR31RZHywHXmQEkyuIbm2Sbjbk6pVpBruZli3xqpYELLG89RqdQu77jn1Y/C//BbUW3Blx2SfIFGmNh/Uk8AdoCVyD/sTsNIi5CsuiiKdzuyP84XScfhFpGK2T9KrqS0JaipwyCtRPD0yrB2axv4/61O+RH7DJLJ3jUGGIiIxufFILLu9C9CEqt8xUvNLXiXsd9vqcxyNZ3lAXzYR6CLxw6R8msP9M6UttX+5Ae61NiEmr/F6KG7KlReDJcT50KBhy3FcqSeuL8pw48sEN5mDNT/S0=
+  template:
+    metadata:
+      name: rclone-config
+      namespace: immich
+    type: Opaque
+---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
