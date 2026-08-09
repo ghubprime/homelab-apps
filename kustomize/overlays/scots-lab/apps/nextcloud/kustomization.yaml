@@ -12,6 +12,10 @@ resources:
   - sealed-nextcloud-admin.yaml
   - sealed-nextcloud-db.yaml
   - sealed-nextcloud-postgresql.yaml
+  # Tier 3B — Velero-independent off-site copy of the Nextcloud data volume.
+  # The Postgres PVC is deliberately NOT copied; see the CronJob header.
+  - sealed-rclone-secret.yaml
+  - cronjob-gdrive-backup.yaml
 helmCharts:
 - name: nextcloud
   repo: https://nextcloud.github.io/helm/

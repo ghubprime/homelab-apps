@@ -1,2 +1,21 @@
+# =============================================================================
+# ⚠️  ORPHANED — THIS FILE IS NOT ON THE RENDER PATH. EDITS HERE DO NOTHING.
+# =============================================================================
+# Verified 2026-08-09 by: python tools/find-orphaned-values.py
+#
+# No kustomization.yaml and no HelmChartInflationGenerator names this file in a
+# `valuesFile:`. Changing it produces a byte-identical render and a silent no-op.
+#
+# The file that IS read:
+#   homelab-apps/helm/overlays/scots-lab/apps/uptime-kuma/values-scots-lab.yaml
+#
+# This is Rule #32. It is not hypothetical: a cert-manager fix was committed to an
+# orphaned values file, rendered identically, and left certificate renewal dead for
+# 72 days — ending 11 days short of simultaneous CA + wildcard expiry.
+#
+# Either wire this file in with `valuesFile:` or delete it. Leaving it here as a
+# decoy is the failure mode.
+# =============================================================================
+
 # Empty placeholder for HelmChartInflationGenerator to parse before overlay replacement
 dummy: "true"

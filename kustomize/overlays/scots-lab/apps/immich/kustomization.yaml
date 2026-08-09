@@ -8,6 +8,10 @@ resources:
   - postgres.yaml
   - redis.yaml
   - immich-cnp.yaml
+  # Tier 3B — Velero-independent off-site copy of the photo library.
+  # The SealedSecret must stay listed BEFORE the CronJob references it.
+  - sealed-rclone-secret.yaml
+  - cronjob-gdrive-backup.yaml
 helmCharts:
   - name: immich
     repo: https://immich-app.github.io/immich-charts

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "ignorePaths": [
+    "**/charts/**",
+    "**/manifests/**"
+  ],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "packageRules": [
+    {
+      "description": "Rule #27 tier 1 — PVC-backed data applications. These hold the data the operator named irreplaceable (photos, scanned documents, files) and several run schema migrations on start, which are not reversible by rolling the image back. Renovate must not open these unattended: each needs a Velero backup taken first and must be merged ONE AT A TIME. dependencyDashboardApproval forces an explicit click per update instead of a PR appearing on its own.",
+      "matchFileNames": [
+        "**/immich/**",
+        "**/photoprism/**",
+        "**/paperless/**",
+        "**/nextcloud/**",
+        "**/outline/**",
+        "**/linkwarden/**",
+        "**/znuny/**",
+        "**/actual-budget/**",
+        "**/homebox/**"
+      ],
+      "dependencyDashboardApproval": true,
+      "addLabels": ["rule-27-tier-1", "needs-velero-backup"],
+      "automerge": false
+    },
+    {
+      "description": "Rule #27 — never batch-merge. Major bumps are always separate, single-package PRs so a failure is attributable to one change.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "addLabels": ["major-bump"],
+      "automerge": false
+    },
+    {
+      "description": "Stateless utility apps with no PVC. Still no automerge — this is a single-operator cluster with prune+selfHeal enabled, so a bad sync self-heals into place rather than backing itself out.",
+      "matchFileNames": [
+        "**/it-tools/**",
+        "**/drawio/**",
+        "**/vert/**",
+        "**/openspeedtest/**",
+        "**/stirling-pdf/**",
+        "**/rackula/**"
+      ],
+      "addLabels": ["rule-27-tier-3", "stateless"],
+      "automerge": false
+    },
+    {
+      "description": "Pin any floating tag Renovate encounters so it becomes trackable. :latest is how the CrowdSec bouncer died — the upstream image was deleted and there was no pinned version to fall back to.",
+      "matchUpdateTypes": ["pin", "pinDigest"],
+      "addLabels": ["pin-floating-tag"]
+    }
+  ]
+}

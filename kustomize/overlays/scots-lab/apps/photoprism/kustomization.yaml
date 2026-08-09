@@ -6,6 +6,9 @@ resources:
   - httproute.yaml
   - sealed-photoprism-oidc.yaml
   - sealed-photoprism-admin.yaml
+  # Tier 3B — Velero-independent off-site copy of originals + storage.
+  - sealed-rclone-secret.yaml
+  - cronjob-gdrive-backup.yaml
 patches:
   - path: photoprism-oidc-env-patch.yaml
   - path: photoprism-admin-env-patch.yaml

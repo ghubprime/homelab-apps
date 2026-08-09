@@ -43,16 +43,34 @@ spec:
                   --stats-one-line
 
                 EXIT_CODE=$?
+                # Rule #30 applies to this job as much as to anything in the cluster:
+                # both healthcheck pings used to be commented out, so a failure of the ONLY
+                # second off-site copy would have been completely silent. Now driven by an
+                # optional Secret key — unset warns loudly rather than failing the backup.
                 if [ $EXIT_CODE -eq 0 ]; then
                   echo "=== Mirror sync completed successfully ==="
-                  # Ping healthcheck on success (uncomment when configured)
-                  # curl -fsS -m 10 --retry 5 https://ping.srbii.com/api/v1/ping/<UUID> > /dev/null
+                  if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                    curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL" > /dev/null || true
+                  else
+                    echo "WARNING: HEALTHCHECK_URL unset - the R2->GDrive mirror is UNMONITORED"
+                  fi
                 else
                   echo "=== Mirror sync FAILED with exit code $EXIT_CODE ==="
-                  # Ping healthcheck failure endpoint (uncomment when configured)
-                  # curl -fsS -m 10 --retry 5 https://ping.srbii.com/api/v1/ping/<UUID>/fail > /dev/null
+                  if [ -n "${HEALTHCHECK_URL:-}" ]; then
+                    curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL/fail" > /dev/null || true
+                  fi
                   exit $EXIT_CODE
                 fi
+            env:
+              # Create a check in the `healthchecks` app, then add its ping URL to the
+              # rclone-config Secret under this key. `optional: true` means the job keeps
+              # working before you do, but every run logs that it is unmonitored.
+              - name: HEALTHCHECK_URL
+                valueFrom:
+                  secretKeyRef:
+                    name: rclone-config
+                    key: healthcheck-url-r2-mirror
+                    optional: true
             volumeMounts:
             - name: rclone-config
               mountPath: /config

@@ -11,6 +11,10 @@ resources:
   # values-scots-lab.yaml, which suppress the subcharts' own Secrets.
   - sealed-paperless-postgresql.yaml
   - sealed-paperless-redis.yaml
+  # Tier 3B — Velero-independent off-site copy of media + export.
+  # The DB and consume volumes are deliberately NOT copied; see the CronJob header.
+  - sealed-rclone-secret.yaml
+  - cronjob-gdrive-backup.yaml
 helmCharts:
   - name: paperless-ngx
     repo: https://charts.gabe565.com
