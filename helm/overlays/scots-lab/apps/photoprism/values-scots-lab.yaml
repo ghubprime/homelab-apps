@@ -49,16 +49,36 @@ database:
   driver: "sqlite"
 
 # Persistent storage on Ceph
+# ── Sizing note (2026-08-10) ────────────────────────────────────────────────────
+# `storage` is the binding constraint, NOT `originals`. It holds PhotoPrism's
+# generated thumbnails and sidecar files, which scale with the library — plan on
+# roughly 20-25% of the originals size. At the previous 10Gi it would have filled
+# somewhere around 40-50 GiB of photos and stalled indexing long before the
+# originals volume looked full.
+#
+# Raised to 500Gi originals / 125Gi storage (25%). Headroom check:
+#   Ceph MAX AVAIL          : 26 TiB usable (88 TiB raw, size=3, failureDomain host)
+#   currently stored         : 1.8 TiB, of which ~1.77 TiB is orphaned snapshots
+#   CephPoolNearFull alert   : fires at 70% => keep the pool under ~18 TiB
+# 500Gi consumes 1.5 TiB raw at size=3, which is comfortably inside that budget.
+#
+# ⚠️ Every GB here fans out to four more places — Ceph x3, Velero fs-backup to R2
+# (the nightly critical-data-backup covers photoprism), the R2->Drive mirror, and
+# the Tier-3B direct Drive copy. Budget roughly: 1 TB of photos ≈ 3 TB Ceph +
+# ~1 TB R2 (~$15/mo) + ~2 TB Google Drive across two copies.
+#
+# ceph-block has allowVolumeExpansion: true, so these can be raised again later.
+# They can never be SHRUNK — do not overshoot expecting to reclaim it.
 persistence:
   storageClassName: "ceph-block"
   originals:
     enabled: true
-    size: 100Gi
+    size: 500Gi          # was 100Gi
     accessModes:
       - ReadWriteOnce
   storage:
     enabled: true
-    size: 10Gi
+    size: 125Gi          # was 10Gi — 25% of originals; this is the real constraint
     accessModes:
       - ReadWriteOnce
 
