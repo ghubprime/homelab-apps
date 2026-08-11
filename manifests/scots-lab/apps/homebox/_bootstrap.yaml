@@ -70,7 +70,7 @@ spec:
               name: homebox-oauth-secret
         - name: HBOX_OPTIONS_TRUST_PROXY
           value: "true"
-        image: ghcr.io/sysadminsmedia/homebox:latest
+        image: ghcr.io/sysadminsmedia/homebox@sha256:6506480a3dfadd2cc885fa97b32d11b0ee28ec58629fa34a76afdb4ac540c7fc
         imagePullPolicy: IfNotPresent
         name: homebox
         ports:
