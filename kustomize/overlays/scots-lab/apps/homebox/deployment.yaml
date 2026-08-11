@@ -23,7 +23,15 @@ spec:
           type: RuntimeDefault
       containers:
         - name: homebox
-          image: ghcr.io/sysadminsmedia/homebox:latest
+          # Pinned by DIGEST 2026-08-11. Was `:latest`.
+          # homebox holds inventory data and runs schema migrations on start, so an unpinned
+# upgrade can migrate the database out from under you with no way back.
+          #
+          # This digest is exactly what was already running when it was pinned, read from the
+          # live pod's imageID - so this is a no-op for the running cluster and cannot drift.
+          # A version tag was deliberately not guessed at; Renovate tracks digest pins via
+          # pinDigest and will propose updates as reviewable PRs (Rule #27).
+          image: ghcr.io/sysadminsmedia/homebox@sha256:6506480a3dfadd2cc885fa97b32d11b0ee28ec58629fa34a76afdb4ac540c7fc
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 7745
