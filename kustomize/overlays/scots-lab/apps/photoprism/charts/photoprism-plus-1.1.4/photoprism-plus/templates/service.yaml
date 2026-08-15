@@ -1,4 +1,7 @@
-{{- if .Values.service.enable }}
+{{- if hasKey .Values.service "enable" -}}
+{{- fail "service.enable has been renamed to service.enabled — please update your values overrides." -}}
+{{- end -}}
+{{- if .Values.service.enabled }}
 apiVersion: v1
 kind: Service
 metadata:

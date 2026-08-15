@@ -4,6 +4,11 @@ questions:
     label: "Image Tag"
     description: "Override the container tag; leave empty to use the chart appVersion."
     type: string
+  - variable: config.PHOTOPRISM_SITE_NAME
+    group: "Customization"
+    label: "Site Name"
+    description: "Optional short name identifying this instance in cluster switchers and selectors. Example: Acme Media."
+    type: string
   - variable: config.PHOTOPRISM_SITE_TITLE
     group: "Customization"
     label: "Site Title"
@@ -64,7 +69,7 @@ questions:
   - variable: config.PHOTOPRISM_APP_NAME
     group: "Customization"
     label: "App Name"
-    description: "Display name when PhotoPrism is installed as a PWA. Example: PhotoPrism Plus."
+    description: "Display name when PhotoPrism is installed as a PWA."
     type: string
   - variable: config.PHOTOPRISM_APP_ICON
     group: "Customization"
@@ -201,6 +206,10 @@ questions:
         description: "Space-delimited scopes requested from the provider."
         type: string
         default: "openid email profile"
+      - variable: oidc.PHOTOPRISM_OIDC_PROMPT
+        label: "OIDC Authorization Prompt"
+        description: "Optional prompt forcing re-authentication or account selection: login, select_account, or consent."
+        type: string
       - variable: oidc.PHOTOPRISM_OIDC_REGISTER
         label: "Auto Register Users"
         description: "Automatically create PhotoPrism accounts after successful OIDC login."
@@ -256,7 +265,17 @@ questions:
   - variable: database.password
     group: "Database"
     label: "Database Password"
-    description: "Optional password stored in the chart-managed secret."
+    description: "Optional password stored in the chart-managed secret. Ignored when an external secret is referenced."
+    type: string
+  - variable: database.passwordSecretName
+    group: "Database"
+    label: "Password Secret Name"
+    description: "Reference an existing Kubernetes Secret for the password instead of the chart-managed secret."
+    type: string
+  - variable: database.passwordSecretKey
+    group: "Database"
+    label: "Password Secret Key"
+    description: "Key within the referenced secret (defaults to PHOTOPRISM_DATABASE_PASSWORD)."
     type: string
   - variable: database.timeout
     group: "Database"
