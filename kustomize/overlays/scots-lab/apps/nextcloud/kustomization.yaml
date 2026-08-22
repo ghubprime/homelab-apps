@@ -19,7 +19,7 @@ resources:
 helmCharts:
 - name: nextcloud
   repo: https://nextcloud.github.io/helm/
-  version: 4.6.11
+  version: 9.2.6
   releaseName: nextcloud
   namespace: nextcloud
   includeCRDs: true
