@@ -71,6 +71,21 @@ spec:
             app.kubernetes.io/part-of: nextcloud
         spec:
           automountServiceAccountToken: false
+          # PERMISSIONS - why this job needs GID 33
+          #   The two paths that matter most are owned by www-data (33), not by UID 1000:
+          #     /data/data               drwxrws---  33 33   <- every Nextcloud user file
+          #     /data/config/config.php  -rw-rw----  33 33
+          #   Both are group-readable, so joining GID 33 is enough and the container keeps
+          #   running as a non-root user. Without it rclone gets EACCES on both, counts
+          #   them as IO errors and aborts the entire sync with "not deleting files as
+          #   there were IO errors" - the same failure mode the lost+found exclude below
+          #   was added for, just on a path that actually matters. The job had been failing
+          #   this way every night and the mirror therefore never contained /data/data at
+          #   all. Verified live 2026-10-20.
+          #   fsGroup is deliberately NOT used here: it would recursively relabel a 100Gi
+          #   volume on every run. supplementalGroups only adds the GID to the process.
+          securityContext:
+            supplementalGroups: [33]
           affinity:
             podAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:

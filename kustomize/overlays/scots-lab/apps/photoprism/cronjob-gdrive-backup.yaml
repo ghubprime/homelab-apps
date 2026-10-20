@@ -322,8 +322,27 @@ spec:
                 limits:
                   memory: 512Mi
               securityContext:
-                runAsNonRoot: true
-                runAsUser: 1000
+                # PERMISSIONS - why this one job runs as root and the originals job does not
+                #   PhotoPrism itself runs as root (Rule #22: s6-overlay images need
+                #   runAsUser: 0), so the SQLite dumps it writes are root-owned and mode 0600:
+                #     /data/backup/sqlite3/           drwxrwsr-x+  0 0
+                #     /data/backup/sqlite3/*.sql      -rw-------+  0 0
+                #   Mode 0600 gives group and other nothing, so supplementalGroups cannot help
+                #   the way it does for nextcloud - only the owner can read these. Running as
+                #   UID 0 reads them by ownership alone, so capabilities stay fully dropped
+                #   (adding DAC_READ_SEARCH would be the alternative, and it is both broader
+                #   and not on the PSS baseline allow-list this namespace enforces).
+                #   Exposure stays narrow: /data is mounted readOnly at the volume level, the
+                #   root filesystem is read-only, all capabilities are dropped and privilege
+                #   escalation is off. The originals job keeps UID 1000 because photo files
+                #   there are world-readable and it has never failed.
+                #   Without this rclone gets EACCES on every .sql dump, counts them as IO
+                #   errors and aborts the whole sync ("not deleting files as there were IO
+                #   errors"), so the database dumps - the only part of this volume that is
+                #   not reproducible from originals - were never mirrored. Verified 2026-10-20.
+                runAsNonRoot: false
+                runAsUser: 0
+                runAsGroup: 0
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
                 capabilities:

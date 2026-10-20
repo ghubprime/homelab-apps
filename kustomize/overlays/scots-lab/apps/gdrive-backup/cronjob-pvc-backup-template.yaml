@@ -22,6 +22,24 @@
 #
 #   4. Add the CronJob to the app's kustomization.yaml resources list
 #
+#   5. CHECK FILE OWNERSHIP BEFORE YOU TRUST THE FIRST GREEN RUN. The rclone
+#      container runs as UID 1000. If the app writes as a different user, rclone
+#      gets EACCES on those paths, counts them as IO errors and aborts the WHOLE
+#      sync with "not deleting files as there were IO errors" - so the backup
+#      fails on exactly the files that matter most. Verify with:
+#
+#        kubectl exec -n <ns> <app-pod> -- ls -lnd <path-to-check>
+#
+#      Then pick the least-privileged fix that actually works:
+#        - group-readable to a known GID (e.g. nextcloud, www-data 33, mode 0660/0770)
+#            -> pod-level  securityContext.supplementalGroups: [33]   (stays non-root)
+#        - owner-only and root-owned (e.g. photoprism sqlite dumps, mode 0600)
+#            -> container  runAsUser: 0 / runAsNonRoot: false         (owner reads it;
+#               capabilities stay dropped, and /data is mounted readOnly anyway)
+#      Do NOT "fix" this by excluding the unreadable path - that silently drops the
+#      data you are trying to back up. Both cases were live failures found 2026-10-20;
+#      nextcloud had never mirrored /data/data at all.
+#
 # Recommended apps for Tier 3B (stateful with irreplaceable data):
 #   - nextcloud       (files, contacts, calendars)
 #   - paperless        (scanned documents + OCR)
