@@ -28,8 +28,35 @@ spec:
             command: ["/bin/sh", "-c"]
             args:
               - |
+                set -u
                 cp /config/rclone.conf /tmp/rclone.conf
+
+                # The rclone image is Alpine with busybox wget and NO curl, so a
+                # `curl` ping would exit 127. busybox wget has no retry flag, hence the
+                # loop. A ping that cannot be delivered must never change the job's exit.
+                ping_hc() {
+                  if [ -z "${HEALTHCHECK_URL:-}" ]; then
+                    echo "WARNING: HEALTHCHECK_URL unset - this cleanup is UNMONITORED"
+                    return 0
+                  fi
+                  _try=1
+                  while [ "$_try" -le 5 ]; do
+                    if wget -q -T 10 -O /dev/null "${HEALTHCHECK_URL}${1:-}"; then
+                      echo "healthcheck ping delivered (${1:-ok})"
+                      return 0
+                    fi
+                    _try=$((_try + 1))
+                    sleep 5
+                  done
+                  echo "WARNING: healthcheck ping failed 5 times - this run is UNMONITORED"
+                  return 0
+                }
+
                 echo "=== GDrive Retention Cleanup: $(date -Iseconds) ==="
+
+                # Both prunes always run; EXIT_CODE keeps the first failure so a partial
+                # cleanup still reports /fail rather than a misleading success.
+                EXIT_CODE=0
 
                 echo "--- Pruning velero-mirror (>365 days) ---"
                 rclone delete \
@@ -38,7 +65,7 @@ spec:
                   --min-age 365d \
                   --log-level INFO \
                   --stats-one-line \
-                  --rmdirs
+                  --rmdirs || EXIT_CODE=$?
                 echo "Velero mirror pruning complete."
 
                 echo "--- Pruning pvc-snapshots (>180 days) ---"
@@ -48,7 +75,7 @@ spec:
                   --min-age 180d \
                   --log-level INFO \
                   --stats-one-line \
-                  --rmdirs
+                  --rmdirs || EXIT_CODE=$?
                 echo "PVC snapshots pruning complete."
 
                 echo "--- Drive usage summary ---"
@@ -57,7 +84,26 @@ spec:
                 rclone size GDrive:pvc-snapshots --config /tmp/rclone.conf --json 2>/dev/null | \
                   (cat; echo) | head -1
 
-                echo "=== Retention cleanup complete ==="
+                # Rule #30: a cleanup nobody watches is not a cleanup. This job runs monthly,
+                # so a silent failure would go unnoticed for a month at a time.
+                if [ $EXIT_CODE -eq 0 ]; then
+                  echo "=== Retention cleanup complete ==="
+                  ping_hc
+                else
+                  echo "=== Retention cleanup FAILED (exit $EXIT_CODE) ==="
+                  ping_hc /fail
+                  exit $EXIT_CODE
+                fi
+            env:
+              # Create a check in the `healthchecks` app, then add its ping URL to the
+              # rclone-config Secret under this key. `optional: true` means the job
+              # keeps working before you do, but every run logs that it is unmonitored.
+              - name: HEALTHCHECK_URL
+                valueFrom:
+                  secretKeyRef:
+                    name: rclone-config
+                    key: healthcheck-url-retention-cleanup
+                    optional: true
             volumeMounts:
             - name: rclone-config
               mountPath: /config

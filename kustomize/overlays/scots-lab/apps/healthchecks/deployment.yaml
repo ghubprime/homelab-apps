@@ -42,6 +42,15 @@ spec:
               value: "Scots Lab Healthchecks"
             - name: REMOTE_USER_HEADER
               value: "HTTP_X_FORWARDED_USER"
+            # Required for the ntfy integration. healthchecks refuses to open a
+            # socket to a private IP unless this is set (hc/lib/curl.py), and
+            # ntfy.ntfy.svc.cluster.local resolves to a ClusterIP in 10.0.0.0/8,
+            # so every notification failed with "Connections to private IP
+            # addresses are not allowed". Verified in-cluster 2026-10-20.
+            # Safe here: only the operator can create integrations, behind
+            # Keycloak, and every notification target is in-cluster.
+            - name: INTEGRATIONS_ALLOW_PRIVATE_IPS
+              value: "True"
           volumeMounts:
             - name: data
               mountPath: /config

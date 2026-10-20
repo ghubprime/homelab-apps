@@ -33,6 +33,14 @@ spec:
     - matchLabels:
         io.kubernetes.pod.namespace: kube-system
         k8s-app: kube-dns
+  # Allow notifications to the in-cluster ntfy server.
+  # REQUIRED and not redundant: `toEntities: world` and `toCIDR: 0.0.0.0/0`
+  # below do NOT match in-cluster pods, because Cilium resolves cluster
+  # destinations to their security identity rather than to a CIDR. Without
+  # this rule the ntfy POST times out. Verified 2026-10-20.
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: ntfy
   # Allow external egress for webhook notifications and OIDC
   - toEntities:
     - world

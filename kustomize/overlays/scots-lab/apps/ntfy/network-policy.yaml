@@ -21,6 +21,12 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: kube-system
+    # healthchecks sends its down/up notifications here. The ipBlock rules
+    # below do not cover it: a Kubernetes ipBlock only ever matches traffic
+    # from outside the cluster, never a pod in another namespace.
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: healthchecks
 
     - ipBlock:
         cidr: 192.168.8.0/24

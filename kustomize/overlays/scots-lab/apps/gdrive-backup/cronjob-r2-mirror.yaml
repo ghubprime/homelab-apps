@@ -29,6 +29,29 @@ spec:
             args:
               - |
                 cp /config/rclone.conf /tmp/rclone.conf
+
+                # The rclone image is Alpine with busybox wget and NO curl, so the
+                # original `curl -fsS --retry 5` ping could never have fired: it exited 127
+                # and the trailing `|| true` swallowed it. Verified in-image 2026-10-20.
+                # busybox wget has no retry flag, hence the loop. A ping that cannot be
+                # delivered must never change the job's own exit status.
+                ping_hc() {
+                  if [ -z "${HEALTHCHECK_URL:-}" ]; then
+                    echo "WARNING: HEALTHCHECK_URL unset - this backup is UNMONITORED"
+                    return 0
+                  fi
+                  _try=1
+                  while [ "$_try" -le 5 ]; do
+                    if wget -q -T 10 -O /dev/null "${HEALTHCHECK_URL}${1:-}"; then
+                      echo "healthcheck ping delivered (${1:-ok})"
+                      return 0
+                    fi
+                    _try=$((_try + 1))
+                    sleep 5
+                  done
+                  echo "WARNING: healthcheck ping failed 5 times - this run is UNMONITORED"
+                  return 0
+                }
                 echo "=== GDrive R2 Mirror: $(date -Iseconds) ==="
                 echo "Copying R2 bucket to Google Drive..."
 
@@ -49,16 +72,10 @@ spec:
                 # optional Secret key — unset warns loudly rather than failing the backup.
                 if [ $EXIT_CODE -eq 0 ]; then
                   echo "=== Mirror sync completed successfully ==="
-                  if [ -n "${HEALTHCHECK_URL:-}" ]; then
-                    curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL" > /dev/null || true
-                  else
-                    echo "WARNING: HEALTHCHECK_URL unset - the R2->GDrive mirror is UNMONITORED"
-                  fi
+                  ping_hc
                 else
                   echo "=== Mirror sync FAILED with exit code $EXIT_CODE ==="
-                  if [ -n "${HEALTHCHECK_URL:-}" ]; then
-                    curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL/fail" > /dev/null || true
-                  fi
+                  ping_hc /fail
                   exit $EXIT_CODE
                 fi
             env:
