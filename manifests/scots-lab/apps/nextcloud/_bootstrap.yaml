@@ -618,6 +618,29 @@ spec:
             - |
               set -u
               cp /config/rclone.conf /tmp/rclone.conf
+
+              # The rclone image is Alpine with busybox wget and NO curl, so the
+              # original `curl -fsS --retry 5` ping could never have fired: it exited 127
+              # and the trailing `|| true` swallowed it. Verified in-image 2026-10-20.
+              # busybox wget has no retry flag, hence the loop. A ping that cannot be
+              # delivered must never change the job's own exit status.
+              ping_hc() {
+                if [ -z "${HEALTHCHECK_URL:-}" ]; then
+                  echo "WARNING: HEALTHCHECK_URL unset - this backup is UNMONITORED"
+                  return 0
+                fi
+                _try=1
+                while [ "$_try" -le 5 ]; do
+                  if wget -q -T 10 -O /dev/null "${HEALTHCHECK_URL}${1:-}"; then
+                    echo "healthcheck ping delivered (${1:-ok})"
+                    return 0
+                  fi
+                  _try=$((_try + 1))
+                  sleep 5
+                done
+                echo "WARNING: healthcheck ping failed 5 times - this run is UNMONITORED"
+                return 0
+              }
               DATE=$(date +%Y-%m-%d)
               echo "=== Tier3B nextcloud/data -> GDrive @ $DATE ==="
 
@@ -667,16 +690,10 @@ spec:
               # is unset the job still succeeds, but says so loudly in the log.
               if [ $EXIT_CODE -eq 0 ]; then
                 echo "=== nextcloud/data completed OK ==="
-                if [ -n "${HEALTHCHECK_URL:-}" ]; then
-                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL" > /dev/null || true
-                else
-                  echo "WARNING: HEALTHCHECK_URL unset - this backup is UNMONITORED"
-                fi
+                ping_hc
               else
                 echo "=== nextcloud/data FAILED (exit $EXIT_CODE) ==="
-                if [ -n "${HEALTHCHECK_URL:-}" ]; then
-                  curl -fsS -m 10 --retry 5 "$HEALTHCHECK_URL/fail" > /dev/null || true
-                fi
+                ping_hc /fail
                 exit $EXIT_CODE
               fi
             command:
@@ -798,6 +815,7 @@ metadata:
   namespace: nextcloud
 spec:
   encryptedData:
+    healthcheck-url-nextcloud-data: AgAAUHQGSvyLSs+0rPJR2nt4v502/BR966b0L5RlMnMznBtT3oXwKus802EqubfVrxQ0tK8zf3jZ5vaEPXFLIylW0Qiq68uLras7yQd6cXdIXBN7DyT/sN5doHchekfll4Lh8Er/TP/OkXo4ua7PtqP07kC1PcuEsUQ/jOBXARPr/AjLVfhi9ZU7U6N7C4RgI+9WRzDyGOq8X1VqBLilve2qMuBzTv0M5fDR1h1oA4aKFl/HVay0lWhH66yBEB/TE2Xk8DPqZeigeuBmrBA3Ggg6lrU3/cCYU5xG3f2sSws0W79U+c+GjYGswrv03PH+8hdF34LJH+saDDQXHeRRJaqDU9eISl0SzocB/dBJBJQ2J0BrHX42OK+H7ILLm9SA2JnHLZEYr7Po2WGx9Y51nPiVI3Lppwg93/gGxqIBgzNWiN7bchvUL6mZJvo1VjJrC9X0jvZ17vQpDa13F0ZW4+dwGzcrrvDJyyP0xeCT2OdqI7SK7QjiOmo5jg3mkM0umeVXyPSxFRXM31xgJOPbPb7OrdWAcuLULLWChNt9agoPr5Y/k7Oeysmu2HYIWxFUWx6lI/y4oD68Rqk9QZYdI63fvqgMK5rIRklvkBkBMMnuyZFwoqA9M7t2uG2on5bGP7MyXgA9DR36RVaAdK/8/CA7ytVDmB2q2NLMY/baWpjKIcj/VAVralTTWq9hCbd8dqrJTZaQwQp2XnvRdyHIaeoPKtit/LwDWx3Yt3PoHxGAmZYOaWDvr2ltNGSKfe0aVYi0JMsEkG89XU1WmfGJVMHI
     rclone.conf: AgAXhjBoX4n5r/fnqCRztoiordVxpWW2ChgQfecYDA42FU7tbW4PmigrgJjIIZSkyiyEU2LwF2pSP5enZ+7I9pOTLC1kxqQCcBqz5fgLzjm0R2gbpwMNC4xYQqTsoefoJNGeZaYBERPbwlWt2cJdU6KqfROROdOsJHmtyIXaJC/KicfcUWSfc0Yd3s5pMRP55YX+/rLE4U4FCDUtrPisJ80E8Ki5C50GK/RYfs17jFWX503UAq/hhXcDAuytCqUxOBmorKco6hohW/yaQeEKUoj9/NyihUgTzDX3lk3oL9miFeTr+eQgWsHwHjEl0w9EL1LLR4p7+FL5pWUqDDjtVkfCbOpL64pQhLixgnK5ff7EOMM+SWNLjU9DI4pK1FUwvQFPEEnA5vZdQJzFzgTn86GiKivtOFmFbhcyk2fCuFAZqOUYRwu1VUB8ErpFjN7VflZU3ULdz28I+jCOMVdmiT/oZNbFXnhcRYZnOWMd7T/tj42isDgaof3E66bwVf0yAoevVP6w+9DkAHKgUSpZ5U/1nxKfZa9PpwvspNEll7kAOHjDRGHZ8+7N/EH2nrFoo1kM4CgU9lNH52tACRGaTfWkHKFRpKgGer449ckhhGx+DiUECP6QbGs9FmcmVCB8ZEvZScHC93+AwdALYS1v5IaPme0owqC2xuQOMmBvZ0TpudEzQ6Gmr3it9csSSogYMwMPKsQBL4UWQEaPcvVNgtfQaEg1qxSBmls0AeWtqmncBTTGm0GpDsudCz4UcJl3vjlfDuK5cSCPhy4gMbC/YPxRa0Vn8JIArPCIYwQT5yTHf3e56iKsp6TRrLZj1I2agp7386hXSVJmms+vDHjJzCCc2KIM4doR4rgMhRfV3t8mI/FTimFul/s/54IuNc/UI8TrtlZAKtU0zVGQ0bw+BPbn+UN0lWG3XDdhnNtC9dcSJQ8XD/FDWHhefsJ7X3Hc9T63PGC+N1ml9f72b7hN2jhS14v4nR/c92r2EEaFcgxv/H4f60dr6RXMk20tdUOHdrAUOgrs5GX6HNauwB/pnZvWncNifZEK9yxGIPtxwjV38iJNj80NyQtO3UJVqboNJ26DbHXmrIHYN5LzJla+SZDm0Vc9LcxGzGZ8oxtewG5VbvCx4qC6jk02u7UnlhXkDFpi8ykaq0yL/39LECKLdWWf8R+TZ7gYT+oFMzoLma73Uhx36YDy80t6VUM6vZBgT90XydNvrLRuRvnV9f3zHB3vI5L02xXJ0fLiMcJuDiRffDYcWUQs3BbCZVrYYrn6yq98ZNo2talZZ6dDWLTcvs5dwaa05aHMpYPCi3bc3//Gq4dKYDJyW6wUP1Z+BV7lPavgF+Uwcti0QwXZ1envaL4ZA24ZpZ7T2aUmhxt7Rn2uO+8cz5MLXZzoFpzJqt1QQ3psuehxO4KsT30HWNA06FotCM93XLqaFo2FbXCtsqaRS7FTrRj9X5UxOys9IWr/9bG5sE9lxtrvlG3W5Id5VFWCtPity6ljhtUDugic5plyDp8bfu9cdgz8HDcRwtdc/QIIoxGjL4tsXGh98rH93uhWfZXdfFk/OkKwSwOCxx4BjsullL3nrrN5dipyq0Zf+xRUQWiTlpVyNxf9O2Kpi/uJLk0jX5uV+Vri+i9Uzb1TLg3OemjaM2ThAifliVDyhj2WV8UooFwDJxHb0ZgOBt18XhgEM8db9l7CtFJrVwMdRf65ipi+ZyfsPaY7ovMjo+1zMtqN2pc7S6Sh82Rs8TW8rdpAM5QosP5RO3nwv73Q8zUvou6i0Z1ppiEB9g/6zcq4tVuvXKqwdzzwpmOIL9dnpNPMkO9kPg0iVxOa1Cqw5q/z0YaVuYZ3s2OfR7sSuDU5IODbcxH10sNVK/2hhjBQMyp+5QjEY4Bf+ES6YlTbNCCqpv3JKs3LpER65x/ChBk+GpcfiuMoX6aWoPGHWcrooY4zPDwhVL4ObH5qlAI=
   template:
     metadata:
