@@ -717,6 +717,9 @@ spec:
               name: app-data
               readOnly: true
           restartPolicy: OnFailure
+          securityContext:
+            supplementalGroups:
+            - 33
           volumes:
           - name: rclone-config
             secret:
