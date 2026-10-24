@@ -7,6 +7,6 @@ helmCharts:
     repo: https://helm.irsigler.cloud
     releaseName: uptime-kuma
     namespace: uptime-kuma
-    version: 4.1.0
+    version: 4.2.0
     includeCRDs: false
     valuesFile: ../../../../../helm/overlays/scots-lab/apps/uptime-kuma/values-scots-lab.yaml
